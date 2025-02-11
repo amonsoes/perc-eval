@@ -30,7 +30,6 @@ def build_args():
     parser.add_argument('--surrogate_model', type=str, default='resnet', help='set the Image Net model you want to transfer for FGSM')
     parser.add_argument('--surrogate_input_size', type=int, default=224, help='surrogate model input size')
     parser.add_argument('--surrogate_transform', type=str, default='pretrained', help='which surrogate transform to perform on imgs')
-    parser.add_argument('--alpha', type=float, default=0.0, help='set alpha for step size of iterative fgsm methods')
     parser.add_argument('--log_mu', type=float, default=0.4, help='determines the weight of the LoG mask for the final HPF mask')
     parser.add_argument('--N', type=int, default=10, help='set number of samples to be drawn from the eps-neighborhood of adversary gradient for mean calc')
     parser.add_argument('--diagonal', type=int, default=-5, help='set how much low frequency information should be added to dct coefficient comutation. middle_ground:0, less:>0 more:<0')
@@ -56,6 +55,10 @@ def build_args():
     parser.add_argument('--attack_lr', type=float, default=0.0001, help='adjustment rate taken by optimizer (step size)')
     parser.add_argument('--alpha_c', type=float, default=0.1, help='set fidelity loss scalar for alrernating loss adversarial attacks')
     parser.add_argument('--alpha_l', type=float, default=1.0, help='set adversarial loss scalar for alrernating loss adversarial attacks')
+
+    # set l2 early stop criterion
+    # in order to create adv samples within certain L2 bounds
+    parser.add_argument('--l2_bound', type=float, default=134.0, help='set l2 bound for the early stopping of attack optimization')
 
     # generative attacks
     parser.add_argument('--arch', type=str, default='res', help='set generator architecture for adversarial samples')

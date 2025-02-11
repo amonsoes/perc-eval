@@ -5,7 +5,6 @@ import pandas as pd
 from src.adversarial.uvmifgsm import VMIFGSM
 from src.adversarial.jpeg_ifgm import JIFGSM
 from src.adversarial.cvfgsm import CVFGSM
-from src.adversarial.robust_cw import VarRCW
 from src.adversarial.perc_cw import PerC_CW
 from src.adversarial.asr_metric import AUC, ConditionalAverageRate
 from datetime import date

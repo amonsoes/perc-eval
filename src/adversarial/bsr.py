@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import random
+import math
 import torchvision.transforms as T
 
 from torch import nn
@@ -14,7 +15,7 @@ class MIFGSM(Attack):
 
     """
 
-    def __init__(self, model, model_trms, eps=8/255, steps=10, decay=1.0, *args, **kwargs):
+    def __init__(self, model, model_trms, eps=8/255, steps=10, decay=1.0, l2_bound=-1, *args, **kwargs):
         super().__init__("MIFGSM", model, model_trms,  *args, **kwargs)
         self.eps = eps
         self.alpha = eps / steps
@@ -22,6 +23,17 @@ class MIFGSM(Attack):
         self.decay = decay
         self.supported_mode = ["default", "targeted"]
         self.loss = nn.CrossEntropyLoss()
+
+        if l2_bound != -1:
+            self.eps = self.compute_eps_by_l2_bound(l2_bound)
+
+    
+    def compute_eps_by_l2_bound(self, l2_bound):
+        """
+        Given that every pixel in the l_inf norm contributes equally to the l2 distance
+        Assumes that the incoming image size is 3 x 224 x 224
+        """
+        return math.sqrt((l2_bound**2)/(3*224*224))
 
     def forward(self, images, labels):
         r"""

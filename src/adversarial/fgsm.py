@@ -4,6 +4,7 @@ import torchvision.transforms as T
 import scipy.ndimage as nd
 import torch_dct as dct
 import pytorch_colors as colors
+import math
 
 from src.adversarial.attack_base import Attack
 
@@ -75,7 +76,7 @@ class FGSM(Attack):
         grad = torch.autograd.grad(cost, images,
                                    retain_graph=False, create_graph=False)[0]
         
-        self.activations_to_avg_mask(grad.clone().detach())
+        #self.activations_to_avg_mask(grad.clone().detach())
 
         adv_images = images + self.eps*grad.sign()
         adv_images = torch.clamp(adv_images, min=0, max=1).detach()
@@ -131,9 +132,19 @@ class HpfFGSM(FGSM):
     r"""
     HPF-Version of standard FGSM
     """
-    def __init__(self, model, hpf_masker, *args, **kwargs):
+    def __init__(self, model, hpf_masker, l2_bound=-1, *args, **kwargs):
         super().__init__(model, *args, **kwargs)
         self.hpf_masker = hpf_masker
+        if l2_bound != -1:
+            self.eps = self.compute_eps_by_l2_bound(l2_bound)
+
+    
+    def compute_eps_by_l2_bound(self, l2_bound):
+        """
+        Given that every pixel in the l_inf norm contributes equally to the l2 distance
+        Assumes that the incoming image size is 3 x 224 x 224
+        """
+        return math.sqrt((l2_bound**2)/(3*224*224))
 
     def get_eps_delta(self, mask):
         # mask values are between 0-1

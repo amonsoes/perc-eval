@@ -30,7 +30,7 @@ class VMIFGSM(Attack):
 
     """
 
-    def __init__(self, model, surrogate_loss, model_trms, eps=8/255, alpha=0.0, steps=7, decay=1.0, N=5, beta=3/2, *args, **kwargs):
+    def __init__(self, model, surrogate_loss, model_trms, eps=8/255, steps=7, decay=1.0, N=5, beta=3/2, l2_bound=-1, *args, **kwargs):
         super().__init__("VMIFGSM", model, model_trms, *args, **kwargs)
         self.eps = eps
         self.steps = steps
@@ -40,11 +40,18 @@ class VMIFGSM(Attack):
         self.supported_mode = ['default', 'targeted']
         self.loss = surrogate_loss
         self.model_trms = model_trms
-        
-        if alpha == 0.0:
-            self.alpha = eps / steps
-        else:
-            self.alpha = alpha
+        self.alpha = eps / steps
+        if l2_bound != -1:
+            self.eps = self.compute_eps_by_l2_bound(l2_bound)
+
+    
+    def compute_eps_by_l2_bound(self, l2_bound):
+        """
+        Given that every pixel in the l_inf norm contributes equally to the l2 distance
+        Assumes that the incoming image size is 3 x 224 x 224
+        """
+        return math.sqrt((l2_bound**2)/(3*224*224))
+
 
     def forward(self, images, labels):
         r"""

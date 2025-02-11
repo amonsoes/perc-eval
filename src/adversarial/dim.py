@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+import math
 
 from src.adversarial.attack_base import Attack
 
@@ -44,6 +45,7 @@ class DIM(Attack):
         resize_rate=0.9,
         diversity_prob=0.5,
         random_start=False,
+        l2_bound=-1,
         *args,
         **kwargs,
     ):
@@ -57,6 +59,17 @@ class DIM(Attack):
         self.diversity_prob = diversity_prob
         self.random_start = random_start
         self.supported_mode = ["default", "targeted"]
+
+        if l2_bound != -1:
+            self.eps = self.compute_eps_by_l2_bound(l2_bound)
+
+    
+    def compute_eps_by_l2_bound(self, l2_bound):
+        """
+        Given that every pixel in the l_inf norm contributes equally to the l2 distance
+        Assumes that the incoming image size is 3 x 224 x 224
+        """
+        return math.sqrt((l2_bound**2)/(3*224*224))
 
     def input_diversity(self, x):
         img_size = x.shape[-1]

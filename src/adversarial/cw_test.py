@@ -8,7 +8,7 @@ import pandas as pd
 from datetime import date
 from src.adversarial.perc_cw import PerC_CW
 from src.adversarial.custom_cw import CW, MadCW, DistsCW, SsimCW, PsnrCW, YCW, WRCW, HpfCW, VifCW, MSSsimCW
-from src.adversarial.robust_cw import VarRCW, RCW
+from src.adversarial.robust_cw import RCW
 from src.adversarial.asr_metric import AUC
 
 class CWTestEnvironment:

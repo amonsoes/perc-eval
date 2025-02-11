@@ -2,7 +2,6 @@ import torch
 import torchattacks
 import csv
 import os
-import torchvision
 
 from torchvision import transforms as T
 from torchvision.io import encode_jpeg, decode_image
@@ -11,14 +10,14 @@ from src.adversarial.hpf_mask import HPFMasker
 from src.adversarial.black_box.boundary_attack import BoundaryAttack, HPFBoundaryAttack
 from src.adversarial.black_box.nes_attack import NESAttack
 from src.adversarial.black_box.square_attack import SquareAttack, HPFSquareAttack 
-from src.adversarial.black_box.pg_rgf import PriorRGFAttack, HPFPriorRGFAttack
 from src.adversarial.iqm import ImageQualityMetric
 from src.adversarial.custom_cw import CW, WRCW, YCW
-from src.adversarial.robust_cw import VarRCW, RCW
+from src.adversarial.robust_cw import RCW
 from src.adversarial.perc_cw import PerC_CW, PerC_AL
 from src.adversarial.cvfgsm import CVFGSM
 from src.adversarial.jpeg_ifgm import JIFGSM
 from src.adversarial.unipgd import PGD, UniPGD
+from src.adversarial.pgd import PGDL2
 from src.adversarial.ppba import PPBA
 from src.adversarial.bsr import BSR
 from src.adversarial.uvmifgsm import UVMIFGSM, VMIFGSM
@@ -680,7 +679,7 @@ class WhiteBoxAttack(AttackConnection):
         elif attack_type == 'hpf_pgd':
             attack = torchattacks.attacks.pgd.HpfPGD(model, surrogate_loss=surrogate_loss, model_trms=self.model_trms, hpf_masker=hpf_masker, *args, **kwargs)
         elif attack_type == 'pgdl2':
-            attack = torchattacks.attacks.pgdl2.PGDL2(model, surrogate_loss, model_trms=self.model_trms, *args, **kwargs)
+            attack = PGDL2(model, model_trms=self.model_trms, *args, **kwargs)
         elif attack_type == 'hpf_pgdl2':
             attack = torchattacks.attacks.pgdl2.HpfPGDL2(model, surrogate_loss=surrogate_loss, model_trms=self.model_trms, hpf_masker=hpf_masker, *args, **kwargs) #diff for 299(inception) and 224(rest)
         elif attack_type == 'ycbcr_hpf_pgdl2':

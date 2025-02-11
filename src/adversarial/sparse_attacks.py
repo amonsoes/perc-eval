@@ -1,6 +1,7 @@
 
 import numpy as np
 import torch
+import math
 
 from torchattacks.attacks.deepfool import DeepFool
 from src.adversarial.pgd import PGD
@@ -145,10 +146,20 @@ class SparseSigmaAttack(PGD):
     https://arxiv.org/pdf/1909.05040
     """
 
-    def __init__(self, sparse_attack_kappa=-1, *args, **kwargs):
+    def __init__(self, sparse_attack_kappa=-1, l2_bound=-1, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.kappa = sparse_attack_kappa
         self.eps = int(self.eps) #in args eps is originally cast to float
+        if l2_bound != -1:
+            self.eps = self.compute_eps_by_l2_bound(l2_bound)
+
+    
+    def compute_eps_by_l2_bound(self, l2_bound):
+        """
+        Given that every pixel in the l_inf norm contributes equally to the l2 distance
+        Assumes that the incoming image size is 3 x 224 x 224
+        """
+        return math.sqrt((l2_bound**2)/(3*224*224))
 
     """def forward(self, x_nat, y_nat):
         ''' PGD attack wrt L0-norm + sigma-map constraints

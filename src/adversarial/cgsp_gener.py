@@ -19,7 +19,7 @@ from src.adversarial.attack_base import Attack
 
 class CGSPAttack(Attack):
 
-    def __init__(self, arch, device, eps, *args, **kwargs):
+    def __init__(self, arch, device, eps, l2_bound=-1, *args, **kwargs):
         super().__init__('CGSP', *args, **kwargs)
         if arch == 'inc':
             pretrained = './src/adversarial/resources/CGNC_gen_res152.pth'
@@ -32,6 +32,17 @@ class CGSPAttack(Attack):
         self.netG = self.load_from_file(pretrained, uses_inception=uses_inception)
         self.text_cond_dict = torch.load('./src/adversarial/resources/text_feature.pth', map_location=self.device)
         self.label_flag = 'N8'
+
+        if l2_bound != -1:
+            self.eps = self.compute_eps_by_l2_bound(l2_bound)
+
+    
+    def compute_eps_by_l2_bound(self, l2_bound):
+        """
+        Given that every pixel in the l_inf norm contributes equally to the l2 distance
+        Assumes that the incoming image size is 3 x 224 x 224
+        """
+        return math.sqrt((l2_bound**2)/(3*224*224))
 
     def load_from_file(self, pretrained, uses_inception):
 

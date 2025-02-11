@@ -144,6 +144,20 @@ def adversarial_setup(args, filename):
         surrogate_model_params.surrogate_input_size = args.surrogate_input_size
         surrogate_model_params.surrogate_transform = args.surrogate_transform
         adversarial_opt.surrogate_model_params = surrogate_model_params
+        if adversarial_opt.spatial_adv_type in ['vmifgsm',
+                                                'rcw',
+                                                'percal',
+                                                'hpf_fgsm',
+                                                'sparsesigmaattack',
+                                                'sgd_uap',
+                                                'sga_uap',
+                                                'cgnc',
+                                                'cgsp',
+                                                'dim',
+                                                'bsr',
+                                                'square',
+                                                'ppba']:
+            spatial_attack_params.l2_bound = args.l2_bound
         if adversarial_opt.spatial_adv_type in ['square_attack', 'ppba']:
             spatial_attack_params.n_queries = args.n_queries
         if adversarial_opt.spatial_adv_type in ['nes', 
@@ -187,32 +201,6 @@ def adversarial_setup(args, filename):
             spatial_attack_params.steps = args.steps
             spatial_attack_params.overshoot = args.overshoot
         else:
-            if adversarial_opt.spatial_adv_type not in ['fgsm',
-                                                        'hpf_fgsm',
-                                                        'far',
-                                                        'ycbcr_hpf_fgsm',
-                                                        'cw',
-                                                        'ssimcw',
-                                                        'psnrcw',
-                                                        'madcw',
-                                                        'hpfcw',
-                                                        'distscw',
-                                                        'vifcw',
-                                                        'msssimcw',
-                                                        'rcw',
-                                                        'wrcw',
-                                                        'ycw',
-                                                        'varrcw',
-                                                        'perccw',
-                                                        'percal',
-                                                        'ercw',
-                                                        'uap',
-                                                        'sgauap',
-                                                        'dctcw',
-                                                        'sparsesigmaattack',
-                                                        'ppba',
-                                                        'bsr']:
-                spatial_attack_params.alpha = args.alpha
             if adversarial_opt.spatial_adv_type in ['dim']:
                 spatial_attack_params.steps = args.steps
             if adversarial_opt.spatial_adv_type in ['sparsesigmaattack']:

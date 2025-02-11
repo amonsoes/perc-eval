@@ -68,7 +68,8 @@ class CW(Attack):
                 n_starts=1,
                 verbose_cw=False,
                 target_mode='random',
-                eps=0.04):
+                eps=0.04,
+                l2_bound=-1,):
         super().__init__("CW", model, model_trms)
         self.c = c
         self.c_value = c
@@ -92,7 +93,24 @@ class CW(Attack):
         self.forward_fn = self.forward_verbose if verbose_cw else self.forward_regular
         self.set_target_mode(target_mode)
         self.eps = eps # this is needed for a maximum perturbation estimation
-    
+        self.l2_bound = 0 if l2_bound == -1 else l2_bound
+        self.low, self.high = self.get_iq_range_from_l2_bound(l2_bound)
+
+    def get_iq_range_from_l2_bound(self, l2_bound):
+        if l2_bound <= 4.0:
+            low, high = 0.0, 4.0
+        elif l2_bound <= 8.0:
+            low, high = 4.0, 8.0
+        elif l2_bound <= 15.0:
+            low, high = 8.0, 15.0
+        elif l2_bound < 23.0:
+            low, high = 15.0, 23.0
+        elif l2_bound < 38.0:
+            low, high = 23.0, 38.0
+        else:
+            low, high = 38.0, 134.0
+        return low, high
+        
     def set_target_mode(self, mode):
         if mode == 'least_likely':
             self.set_mode_targeted_least_likely()
@@ -105,8 +123,10 @@ class CW(Attack):
     def get_l2_loss(self, adv_images, images, attack_mask):
         #current_iq_loss = self.loss(self.flatten(adv_images,), self.flatten(images)).sum(dim=1)
         current_iq_loss = (adv_images - images).pow(2).sum(dim=(1,2,3)).sqrt()
+        real_losses = current_iq_loss
+        current_iq_loss = torch.clamp(current_iq_loss - self.l2_bound, min=0)
         iq_loss = current_iq_loss.sum()
-        return iq_loss, current_iq_loss
+        return iq_loss, current_iq_loss, real_losses
         
     def forward(self, images, labels):
         best_adv_images_from_starts = self.forward_fn(images, labels)
@@ -275,6 +295,7 @@ class CW(Attack):
     # this should be overwritten by subclass custom CW
     def get_iq_loss(self, adv_images, images, attack_mask):
         current_iq_loss = self.loss(self.flatten(adv_images), self.flatten(images)).sum(dim=1)
+        current_iq_loss = torch.clamp(current_iq_loss - self.l2_bound, min=0)
         iq_loss = current_iq_loss.sum()
         return iq_loss, current_iq_loss
 
