@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import random
 
 from src.adversarial.attack_base import Attack
 
@@ -121,6 +122,7 @@ class PGDL2(Attack):
         steps=10,
         random_start=True,
         eps_for_division=1e-10,
+        l2_bound=-1,
         *args,
         **kwargs,
     ):
@@ -132,6 +134,14 @@ class PGDL2(Attack):
         self.eps_for_division = eps_for_division
         self.supported_mode = ["default", "targeted"]
         self.loss = nn.CrossEntropyLoss()
+        if l2_bound != -1:
+            self.eps = self.get_iq_range_from_l2_bound(l2_bound)
+
+
+    def get_random_l2_from_bounds(self, l2_bound):
+        low, high = self.get_iq_range_from_l2_bound(l2_bound)
+        rand_l2_bound = random.uniform(low, high)
+        return rand_l2_bound
 
     def forward(self, images, labels):
         r"""

@@ -445,9 +445,7 @@ class BlackBoxAttack(AttackConnection):
         orig_x = x
         x = self.to_float(x)
         perturbed_x, num_queries = self.black_box_attack(x, target_y)
-        perturbed_x = perturbed_x.squeeze(0).cpu()
-        self.l2_norm.append(self.get_l2(orig_x.cpu(), (perturbed_x*255).to(torch.uint8)))
-        self.num_queries_lst.append(num_queries)
+        self.num_queries_lst.extend(num_queries)
         self.l2_norm.extend([l2.item() for l2 in self.get_l2(orig_x, perturbed_x)])
         return perturbed_x
     

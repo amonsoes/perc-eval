@@ -325,6 +325,7 @@ class PerC_AL(Attack):
              kappa: float = 0.,
              device: torch.device = torch.device('cpu'),
              batch_size: int = 32, 
+             l2_bound=-1,
              *args,
              **kwargs
                 ) -> None:
@@ -336,6 +337,10 @@ class PerC_AL(Attack):
         self.batch_size = batch_size
         self.device = device
         self.loss = nn.CrossEntropyLoss(reduction='sum')
+        self.l2_bound = 0 if l2_bound == -1 else l2_bound
+        self.low, self.high = self.get_iq_range_from_l2_bound(l2_bound)
+        self.low = self.get_random_l2_from_bounds(l2_bound)
+        
 
     def forward(self, inputs: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """
@@ -376,9 +381,6 @@ class PerC_AL(Attack):
             labels_onehot = torch.zeros(labels.size(0), 1000, device=self.device)
             labels_onehot.scatter_(1, labels.unsqueeze(1), 1)
             labels_infhot = torch.zeros_like(labels_onehot).scatter_(1, labels.unsqueeze(1), float('inf'))
-        if (self.targeted==True) and self.kappa!=0:
-            print('Only support setting kappa in untargeted case!')
-            return
         
         # start optimization
         for i in range(self.max_iterations):
@@ -387,14 +389,14 @@ class PerC_AL(Attack):
             alpha_c=alpha_c_min+0.5*(self.alpha_c_init-alpha_c_min)*(1+math.cos(i/self.max_iterations*math.pi))
             alpha_l=alpha_l_min+0.5*(self.alpha_l_init-alpha_l_min)*(1+math.cos(i/self.max_iterations*math.pi))
 
-            # get cross-entropy loss for adv sample, scale CE-grad to unit length
-            loss = multiplier * self.loss(self.model(self.model_trms(inputs+delta)), labels)
+            # get cross-entropy loss for adv sample, scale CE-grad to unit length, update delta by adversarial gradient
+            loss = multiplier * self.loss(self.model(self.model_trms(inputs+delta)), labels) + self.kappa
             loss.backward()
             grad_a=delta.grad.clone()
             delta.grad.zero_()
             delta.data[~mask_isadv]=delta.data[~mask_isadv]+alpha_l*(grad_a.permute(1,2,3,0)/torch.norm(grad_a.view(batch_size,-1),dim=1)).permute(3,0,1,2)[~mask_isadv]  
             
-            # compute CIEDE2000 difference and get fidelity gradients
+            # compute CIEDE2000 difference and get fidelity gradients, scale, update delta by color gradient
             d_map=ciede2000_diff(inputs_LAB,rgb2lab_diff(inputs+delta,self.device),self.device).unsqueeze(1)
             color_dis=torch.norm(d_map.view(batch_size,-1),dim=1)
             color_loss=color_dis.sum()
@@ -403,26 +405,69 @@ class PerC_AL(Attack):
             delta.grad.zero_()
             delta.data[mask_isadv]=delta.data[mask_isadv]-alpha_c* (grad_color.permute(1,2,3,0)/torch.norm(grad_color.view(batch_size,-1),dim=1)).permute(3,0,1,2)[mask_isadv]
             delta.data=(inputs+delta.data).clamp(0,1)-inputs
+
+            # quantize image (not included in any backward comps) & check if samples are adversarial
             X_adv_round=quantization(inputs+delta.data)
+            mask_isadv = self.check_if_adv(X_adv_round, labels)
 
-            if (self.targeted==False) and self.kappa!=0:
-                logits = self.model(self.model_trms(X_adv_round))
-                real = logits.gather(1, labels.unsqueeze(1)).squeeze(1)
-                other = (logits - labels_infhot).max(1)[0]
-                mask_isadv=(real - other)<=-40
-
-            elif self.kappa==0:
-                if self.targeted:
-                    mask_isadv=torch.argmax(self.model(self.model_trms(X_adv_round)),dim=1)==labels
-                else:
-                    mask_isadv=torch.argmax(self.model(self.model_trms(X_adv_round)),dim=1)!=labels 
-
+            # update adversarial image if: (1) color dist is less (2) images are adversarial
             mask_best=(color_dis.data<color_l2_delta_bound_best)
             mask=mask_best * mask_isadv
             color_l2_delta_bound_best[mask]=color_dis.data[mask]
             X_adv_round_best[mask]=X_adv_round[mask]
 
+            # if in l2_bound range and adversarial, quit optimization
+
+            if self.l2_bound != -1:
+                _ ,_ ,l2_distances = self.get_l2_loss(inputs+delta, inputs, None)
+                print(f'L2 distances: {l2_distances}, is adversarial: {mask_isadv}')
+                if torch.all(l2_distances >= self.low) and torch.all(l2_distances <= self.high) and torch.all(mask_isadv):
+                    break
+
         return X_adv_round_best
+    
+    def check_if_adv(self, X_adv_round, labels):
+            outputs = self.model(self.model_trms(X_adv_round))
+            one_hot_labels = torch.eye(len(outputs[0]), device=self.device)[labels].to(self.device)
+
+            i, _ = torch.max((1-one_hot_labels)*outputs, dim=1) # get the largest logit
+            #outputs[outputs.argmax(dim=1)] = -1e10
+
+            if self.targeted:
+                j = torch.masked_select(outputs, one_hot_labels.bool()) # get the target logit
+                adv_loss = (i - j) + self.kappa
+                is_adv = adv_loss <= 0.0
+                #return torch.clamp((i-j), min=-self.kappa)
+            else:
+                label_mask = torch.full_like(labels.view(-1,1), -1e+03).to(torch.float32)
+                outputs.scatter_(1, labels.view(-1,1), label_mask)
+                j, _ = torch.max(outputs, dim=1)
+                adv_loss = (i - j) + self.kappa
+                is_adv = adv_loss <= 0.0
+            return is_adv
+
+    
+    def get_iq_range_from_l2_bound(self, l2_bound):
+        if l2_bound <= 4.0:
+            low, high = 0.0, 4.0
+        elif l2_bound <= 8.0:
+            low, high = 4.0, 8.0
+        elif l2_bound <= 15.0:
+            low, high = 8.0, 15.0
+        elif l2_bound < 23.0:
+            low, high = 15.0, 23.0
+        elif l2_bound < 38.0:
+            low, high = 23.0, 38.0
+        else:
+            low, high = 38.0, 134.0
+        return low, high
+
+    def get_l2_loss(self, adv_images, images, attack_mask):
+        current_iq_loss = (adv_images - images).pow(2).sum(dim=(1,2,3)).sqrt()
+        real_losses = current_iq_loss
+        current_iq_loss = torch.clamp(current_iq_loss - self.l2_bound, min=0)
+        iq_loss = current_iq_loss.sum()
+        return iq_loss, current_iq_loss, real_losses
 
 class PerC_CW:
     """

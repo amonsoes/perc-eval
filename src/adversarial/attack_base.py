@@ -9,6 +9,8 @@
 import time
 from collections import OrderedDict
 from collections.abc import Iterable
+import random
+import math
 
 import torch
 from torch.utils.data import DataLoader, TensorDataset
@@ -260,6 +262,34 @@ class Attack(object):
     def _recover_model_mode(self, given_training):
         if given_training:
             self.model.train()
+    
+    def get_random_eps_in_range(self, l2_bound):
+        low, high = self.get_iq_range_from_l2_bound(l2_bound)
+        rand_l2_bound = random.uniform(low, high)
+        eps = self.compute_eps_by_l2_bound(rand_l2_bound)
+        return eps
+
+    def compute_eps_by_l2_bound(self, l2_bound):
+        """
+        Given that every pixel in the l_inf norm contributes equally to the l2 distance
+        Assumes that the incoming image size is 3 x 224 x 224
+        """
+        return math.sqrt((l2_bound**2)/(3*224*224))
+    
+    def get_iq_range_from_l2_bound(self, l2_bound):
+        if l2_bound <= 4.0:
+            low, high = 0.0, 4.0
+        elif l2_bound <= 8.0:
+            low, high = 4.0, 8.0
+        elif l2_bound <= 15.0:
+            low, high = 8.0, 15.0
+        elif l2_bound < 23.0:
+            low, high = 15.0, 23.0
+        elif l2_bound < 38.0:
+            low, high = 23.0, 38.0
+        else:
+            low, high = 38.0, 134.0
+        return low, high
 
     def save(self, data_loader, save_path=None, verbose=True, return_verbose=False,
              save_predictions=False, save_clean_inputs=False, save_type='float'):
@@ -420,7 +450,6 @@ class Attack(object):
             _, labels = torch.max(outputs, dim=1)
         label_mask = torch.full_like(labels.view(-1,1), -1e+03).to(torch.float32)
         outputs.scatter_(1, labels.view(-1,1), label_mask)
-        #_, target_labels = torch.max(torch.cat((outputs[:,:labels], outputs[:,labels+1:]), dim=1), dim=1)
         _, target_labels = torch.max(outputs, dim=1)
         return target_labels.long().to(self.device)
 

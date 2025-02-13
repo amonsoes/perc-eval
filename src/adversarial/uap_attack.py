@@ -17,7 +17,7 @@ class SGAUAP(Attack):
         super().__init__("SGAUAP", model, model_trms, *args, **kwargs)
         self.eps = eps
         if l2_bound != -1:
-            self.eps = self.compute_eps_by_l2_bound(l2_bound)
+            self.eps = self.get_random_eps_in_range(l2_bound)
 
 
         if random_uap:
@@ -65,7 +65,7 @@ class SGDUAP(Attack):
         super().__init__("SGDUAP", model, model_trms, *args, **kwargs)
         self.eps = eps
         if l2_bound != -1:
-            self.eps = self.compute_eps_by_l2_bound(l2_bound)
+            self.eps = self.get_random_eps_in_range(l2_bound)
 
         if random_uap:
             self.uap = torch.empty((1, 3, 224, 224)).uniform_(-self.eps, self.eps).to(self.device)

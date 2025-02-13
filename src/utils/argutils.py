@@ -156,10 +156,13 @@ def adversarial_setup(args, filename):
                                                 'dim',
                                                 'bsr',
                                                 'square',
-                                                'ppba']:
+                                                'ppba',
+                                                'pgdl2']:
             spatial_attack_params.l2_bound = args.l2_bound
         if adversarial_opt.spatial_adv_type in ['square_attack', 'ppba']:
             spatial_attack_params.n_queries = args.n_queries
+        if adversarial_opt.spatial_adv_type in ['ppba']:
+            spatial_attack_params.kappa = args.kappa
         if adversarial_opt.spatial_adv_type in ['nes', 
                                                 'boundary_attack', 
                                                 'hpf_boundary_attack',

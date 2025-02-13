@@ -22,6 +22,8 @@ class PPBA(Attack):
                 r=2352,
                 n_queries=2000,
                 rho=0.01,
+                l2_bound=-1,
+                kappa=0,
                 *args, 
                 **kwargs):
         super().__init__('PPBA', model, model_trms, *args, **kwargs)
@@ -36,6 +38,11 @@ class PPBA(Attack):
         self.total_queries = []
         self.total_success = []
         self.total_l2 = 0
+        self.kappa = kappa
+        self.l2_bound = l2_bound
+        self.l2_bound = 0 if l2_bound == -1 else l2_bound
+        self.low, self.high = self.get_iq_range_from_l2_bound(l2_bound)
+        self.low = self.get_random_l2_from_bounds(l2_bound)
 
         image_size = 299 if self.model.model_name == 'inception' else 224
         self.image_size = image_size
@@ -74,7 +81,8 @@ class PPBA(Attack):
         n_samples = x.shape[0]
         N_query = 0
         z = np.zeros((1, self.low_dim))
-        prev_f = self.get_loss(z, x, y, N_query)[0]
+        prev_f, l2_scores = self.get_loss(z, x, y, N_query)
+        prev_f = prev_f[0]
         is_success = 0 if prev_f > 0 else 1
         effective_number = [
             np.ones((1, self.low_dim)),
@@ -88,7 +96,7 @@ class PPBA(Attack):
         ]
 
         for k in range(self.max_iter):
-            print(f'iter:{k}, current_loss:{prev_f}')
+            print(f'iter:{k}, current_loss:{prev_f}, current_l2:{l2_scores}')
             u = np.zeros((n_samples, self.low_dim))
             r = np.random.uniform(size=(n_samples, self.low_dim))
             effective_probability = [
@@ -104,9 +112,9 @@ class PPBA(Attack):
             uz = z + self.rho * u
 
             uz_l2 = np.linalg.norm(uz, axis=1)
-            uz = uz * np.minimum(1, 5 / uz_l2).reshape(-1, 1)
+            uz = uz * np.minimum(1, self.l2_bound / uz_l2).reshape(-1, 1)
 
-            fu = self.get_loss(uz, x, y, N_query)
+            fu, l2_scores = self.get_loss(uz, x, y, N_query)
             if fu.min() < prev_f:
                 worked_u = u[fu < prev_f] # TODO: some issue here
                 effective_probability[0] = effective_probability[0] * self.mom + (
@@ -138,6 +146,12 @@ class PPBA(Attack):
             if prev_f <= 0:
                 is_success = 1
                 break
+
+            if self.l2_bound != 0:
+                is_success = (prev_f - self.kappa) <= 0.0
+                print(f'samples are adversarial:{is_success}')
+                if torch.all(l2_scores >= self.low) and torch.all(l2_scores <= self.high) and is_success:
+                    break
         
         current_q = k
         N_query = 0
@@ -149,32 +163,71 @@ class PPBA(Attack):
             is_success = 0
         print(current_q, is_success, perturbation.view(1, -1).norm(2, 1).item())
 
-        self.total_queries.append(current_q,)
+        self.total_queries.append(current_q)
         self.total_success.append(is_success)
         self.total_l2 += perturbation.view(1, -1).norm(2, 1).item()
-        return new_image, current_q
+        return torch.clamp(new_image, min=0.0, max=1.0), [current_q]
+
+    def get_l2(self, adv_images, images):
+        l2_scores = (adv_images - images).pow(2).sum(dim=(1,2,3)).sqrt()
+        return l2_scores
+
+    def get_iq_range_from_l2_bound(self, l2_bound):
+        if l2_bound <= 4.0:
+            low, high = 0.0, 4.0
+        elif l2_bound <= 8.0:
+            low, high = 4.0, 8.0
+        elif l2_bound <= 15.0:
+            low, high = 8.0, 15.0
+        elif l2_bound < 23.0:
+            low, high = 15.0, 23.0
+        elif l2_bound < 38.0:
+            low, high = 23.0, 38.0
+        else:
+            low, high = 38.0, 134.0
+        return low, high
+
+    def get_random_l2_from_bounds(self, l2_bound):
+        low, high = self.get_iq_range_from_l2_bound(l2_bound)
+        rand_l2_bound = random.uniform(low, high)
+        return rand_l2_bound
 
     def cw_loss(self, x, y, N_query, targeted=False):
         N_query += x.shape[0]
         outputs = self.model(self.model_trms(x))
         one_hot_labels = torch.eye(len(outputs[0]))[y].to(self.device)
 
-        i, _ = torch.max((1 - one_hot_labels) * outputs, dim=1)
-        j, _ = torch.max((one_hot_labels) * outputs, dim=1)
+        i, ind_i = torch.max((1 - one_hot_labels) * outputs, dim=1) # max logit that is not the actual label
+        j, ind_j = torch.max((one_hot_labels) * outputs, dim=1) # max logit
+
+        if targeted:
+            return torch.clamp((i - j) + self.kappa, min=0)
+
+        else:
+            return torch.clamp((j - i) + self.kappa, min=0)
+
+    def get_loss(self, zs, x, y, N_query):
+        z = torch.from_numpy(zs).float().to(self.device).view(-1, self.low_dim)
+        perturbation = (z @ self.Random_Matrix).view(z.shape[0], 3, self.image_size, self.image_size)
+        new_image = (x + perturbation).clamp(0, 1)
+        l2 = self.get_l2(new_image, x)
+        loss = self.cw_loss(new_image, y, N_query, targeted=self.targeted)
+        loss = loss.cpu().numpy()
+        return loss, l2
+    
+    def check_if_adv(self, x, y, N_query, targeted):
+        N_query += x.shape[0]
+        outputs = self.model(self.model_trms(x))
+        one_hot_labels = torch.eye(len(outputs[0]))[y].to(self.device)
+
+        i, ind_i = torch.max((1 - one_hot_labels) * outputs, dim=1) # max logit that is not the actual label
+        j, ind_j = torch.max((one_hot_labels) * outputs, dim=1) # max logit
 
         if targeted:
             return torch.clamp(i - j, min=0)
 
         else:
             return torch.clamp(j - i, min=0)
-
-    def get_loss(self, zs, x, y, N_query):
-        z = torch.from_numpy(zs).float().to(self.device).view(-1, self.low_dim)
-        perturbation = (z @ self.Random_Matrix).view(z.shape[0], 3, self.image_size, self.image_size)
-        new_image = (x + perturbation).clamp(0, 1)
-        loss = self.cw_loss(new_image, y, N_query, targeted=self.targeted)
-        loss = loss.cpu().numpy()
-        return loss
 
     def get_probability(success_probability):
         probability = [v / sum(success_probability) for v in success_probability]
@@ -274,142 +327,3 @@ def block_idct(x, block_size=8, masked=False, ratio=0.5):
                 idct(idct(submat, axis=3, norm="ortho"), axis=2, norm="ortho")
             )
     return z
-
-
-
-
-"""# get most likely predictions and probabilities for a set of inputs
-def get_preds(
-    model, inputs, dataset_name, correct_class=None, batch_size=25, return_cpu=True
-):
-    num_batches = int(math.ceil(inputs.size(0) / float(batch_size)))
-    softmax = torch.nn.Softmax()
-    all_preds, all_probs = None, None
-    for i in range(num_batches):
-        upper = min((i + 1) * batch_size, inputs.size(0))
-        input = apply_normalization(inputs[(i * batch_size) : upper], dataset_name)
-        input_var = torch.autograd.Variable(input.cuda(), volatile=True)
-        output = softmax.forward(model.forward(input_var))
-        if correct_class is None:
-            prob, pred = output.max(1)
-        else:
-            prob, pred = (
-                output[:, correct_class],
-                torch.autograd.Variable(torch.ones(output.size()) * correct_class),
-            )
-        if return_cpu:
-            prob = prob.data.cpu()
-            pred = pred.data.cpu()
-        else:
-            prob = prob.data
-            pred = pred.data
-        if i == 0:
-            all_probs = prob
-            all_preds = pred
-        else:
-            all_probs = torch.cat((all_probs, prob), 0)
-            all_preds = torch.cat((all_preds, pred), 0)
-    return all_preds, all_probs"""
-
-
-"""# get least likely predictions and probabilities for a set of inputs
-def get_least_likely(model, inputs, dataset_name, batch_size=25, return_cpu=True):
-    num_batches = int(math.ceil(inputs.size(0) / float(batch_size)))
-    softmax = torch.nn.Softmax()
-    all_preds, all_probs = None, None
-    for i in range(num_batches):
-        upper = min((i + 1) * batch_size, inputs.size(0))
-        input = apply_normalization(inputs[(i * batch_size) : upper], dataset_name)
-        input_var = torch.autograd.Variable(input.cuda(), volatile=True)
-        output = softmax.forward(model.forward(input_var))
-        prob, pred = output.min(1)
-        if return_cpu:
-            prob = prob.data.cpu()
-            pred = pred.data.cpu()
-        else:
-            prob = prob.data
-            pred = pred.data
-        if i == 0:
-            all_probs = prob
-            all_preds = pred
-        else:
-            all_probs = torch.cat((all_probs, prob), 0)
-            all_preds = torch.cat((all_preds, pred), 0)
-    return all_preds, all_probs"""
-
-"""
-# defines a diagonal order
-# order is fixed across diagonals but are randomized across channels and within the diagonal
-# e.g.
-# [1, 2, 5]
-# [3, 4, 8]
-# [6, 7, 9]
-def diagonal_order(image_size, channels):
-    x = torch.arange(0, image_size).cumsum(0)
-    order = torch.zeros(image_size, image_size)
-    for i in range(image_size):
-        order[i, : (image_size - i)] = i + x[i:]
-    for i in range(1, image_size):
-        reverse = order[image_size - i - 1].index_select(
-            0, torch.LongTensor([i for i in range(i - 1, -1, -1)])
-        )
-        order[i, (image_size - i) :] = image_size * image_size - 1 - reverse
-    if channels > 1:
-        order_2d = order
-        order = torch.zeros(channels, image_size, image_size)
-        for i in range(channels):
-            order[i, :, :] = 3 * order_2d + i
-    return order.view(1, -1).squeeze().long().sort()[1]
-"""
-
-
-"""# zeros all elements outside of the top-left (block_size * ratio) submatrix for every block
-def block_zero(x, block_size=8, ratio=0.5):
-    z = torch.zeros(x.size())
-    num_blocks = int(x.size(2) / block_size)
-    mask = torch.zeros(x.size(0), x.size(1), block_size, block_size)
-    mask[:, :, : int(block_size * ratio), : int(block_size * ratio)] = 1
-    for i in range(num_blocks):
-        for j in range(num_blocks):
-            z[
-                :,
-                :,
-                (i * block_size) : ((i + 1) * block_size),
-                (j * block_size) : ((j + 1) * block_size),
-            ] = (
-                x[
-                    :,
-                    :,
-                    (i * block_size) : ((i + 1) * block_size),
-                    (j * block_size) : ((j + 1) * block_size),
-                ]
-                * mask
-            )
-    return z"""
-
-
-
-"""NUM = args.num
-for i in tqdm(range(NUM)):
-    index = i
-    image = testset[index][0].unsqueeze(0).cuda()
-    label = model(normalize(image)).argmax(1)
-
-    with torch.no_grad():
-        q, s, l2, _ = PPBA(model, image, label, i)
-
-    print(i + 1, sum(total_queries) / (i + 1), sum(total_success) / (i + 1))
-    print("=" * 10)
-
-
-act_qs = [
-    0 if total_success[i] == 0 or total_queries[i] > self.max_iter else 1
-    for i in range(len(total_success))
-]
-sum_qs = sum([act_qs[i] * total_queries[i] for i in range(len(total_queries))])
-print("ASR:", sum(act_qs) / NUM)
-print("On success:")
-print("average queries:", sum_qs / sum(act_qs))
-
-print("On all:")
-print("average queries:", sum(total_queries) / NUM)"""

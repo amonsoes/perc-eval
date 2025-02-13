@@ -46,15 +46,9 @@ class SquareAttack(Attack):
         self.device = device
 
         if l2_bound != -1:
-            self.eps = self.compute_eps_by_l2_bound(l2_bound)
+            self.eps = self.get_random_eps_in_range(l2_bound)
 
-    
-    def compute_eps_by_l2_bound(self, l2_bound):
-        """
-        Given that every pixel in the l_inf norm contributes equally to the l2 distance
-        Assumes that the incoming image size is 3 x 224 x 224
-        """
-        return math.sqrt((l2_bound**2)/(3*224*224))
+
 
     def forward(self, images, labels):
         r"""

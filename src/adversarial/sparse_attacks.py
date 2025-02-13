@@ -151,7 +151,7 @@ class SparseSigmaAttack(PGD):
         self.kappa = sparse_attack_kappa
         self.eps = int(self.eps) #in args eps is originally cast to float
         if l2_bound != -1:
-            self.eps = self.compute_eps_by_l2_bound(l2_bound)
+            self.eps = self.get_random_eps_in_range(l2_bound)
 
     
     def compute_eps_by_l2_bound(self, l2_bound):

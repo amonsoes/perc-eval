@@ -74,7 +74,7 @@ python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --tran
 
 <br>
 
-C&W: Attack based on adversarial optimization.
+RCW: Attack based on adversarial optimization.
 
 - c: trade-off parameter. scales adversarial loss f
 - kappa: confidence of adversarial sample
@@ -82,7 +82,7 @@ C&W: Attack based on adversarial optimization.
 - n_starts: nr of binary steps to find c
 
 ```bash
-python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type cw --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted True --c 1.0 --kappa 0 --attack_lr 0.005 --n_starts 4
+python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretrained --adversarial True --steps 10000 --spatial_adv_type rcw --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted True --c 1.0 --kappa 0 --attack_lr 0.005 --n_starts 4 --target_mode=most_likely --attack_compression=True --attack_compression_rate=90
 ```
 
 <br>
@@ -95,7 +95,7 @@ PerC-AL: Adv optim. attack that uses an alternating loss and uses the CIEDE2000 
 - kappa: confidence of adversarial sample
 
 ```bash
-python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type cw --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted True --kappa 0 --alpha_l 1.0 --alpha_c 0.1
+python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretrained --adversarial True --steps 10000 --spatial_adv_type percal --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted True --kappa 0 --alpha_l 1.0 --alpha_c 0.1 --is_targeted=True --target_mode=most_likely
 ```
 
 <br>
@@ -207,7 +207,7 @@ PPBA: Sccore-based black-box attack that reduces the search space by restricting
 all other parameters are set by default.
 
 ```bash
-python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type ppba --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False --n_queries=5000
+python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretrained --adversarial True --steps 10000 --spatial_adv_type ppba --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False --n_queries=5000
 ```
 
 <br>
