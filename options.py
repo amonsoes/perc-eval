@@ -24,6 +24,7 @@ def build_args():
     parser.add_argument('--scale_cad_for_asp', type=lambda x: x in ['True', 'true', 'TRUE', '1', 'yes', 'y'], default=False, help='set if CAD should be scaled')
     parser.add_argument('--test_cas', type=lambda x: x in ['True', 'true', 'TRUE', '1', 'yes', 'y'], default=False, help='test the compression adaptation search')
     parser.add_argument('--q_search_type', type=str, default='cqe', help='set cqe search type for RCW')
+    parser.add_argument('--add_to_adv_dataset', type=lambda x: x in ['True', 'true', 'TRUE', '1', 'yes', 'y'], default=False, help='create entries in adv dataset')
     
     
     # adv: white-box

@@ -54,6 +54,7 @@ class Training:
                 self.utils.logger.write_to_report(paths, x_hat, y, mad_scores, ssim_scores, l2_norms)    
         else:
             self.utils.logger.write_to_report(paths, x_hat, y)
+        return l2_norms
 
 
 class CNNTraining(Training):
@@ -136,7 +137,8 @@ class CNNTraining(Training):
                 x, y = x.to(self.device), y.to(self.device)
                 x_hat = self.model(x)
                 self.utils.metrics(x_hat, y)
-                self.report(x_hat, y, paths)
+                l2_norms = self.report(x_hat, y, paths)
+                self.data.post_transforms.attack.save_to_adv_dataset(x, l2_norms, paths)
             result = self.utils.metrics.compute()
             self.utils.logger.log_test_results(result, is_targeted=self.data.transforms.adversarial_opt.is_targeted)
             if hasattr(self.data.post_transforms, 'attack'):

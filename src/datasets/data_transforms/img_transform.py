@@ -124,6 +124,7 @@ class PostTransforms:
                                     input_size=self.input_size,
                                     jpeg_compr_obj=internal_jpeg_compr,
                                     internal_jpeg_quality=internal_compression_rate,
+                                    add_to_adv_dataset=self.adversarial_opt.add_to_adv_dataset,
                                     **self.adversarial_opt.spatial_attack_params.__dict__)
         self.attack = attack_loader.attack
         self.surrogate_trm = surrogate_trm

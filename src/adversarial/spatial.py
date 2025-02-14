@@ -2,6 +2,8 @@ import torch
 import torchattacks
 import csv
 import os
+import torchvision
+
 
 from torchvision import transforms as T
 from torchvision.io import encode_jpeg, decode_image
@@ -43,6 +45,7 @@ class AttackLoader:
                 hpf_mask_params,
                 input_size,
                 jpeg_compr_obj=None,
+                add_to_adv_dataset=False,
                 *args, 
                 **kwargs):
         self.device = device
@@ -53,6 +56,7 @@ class AttackLoader:
         self.surrogate_model_trms = surrogate_model_trms
         self.jpeg_compr_obj = jpeg_compr_obj
         self.attack = self.load_attack(attack_type, hpf_mask_params, input_size, *args, **kwargs)
+        self.attack.add_to_adv_dataset = add_to_adv_dataset
         
     def load_attack(self, attack_type, hpf_mask_params, input_size, *args, **kwargs):
         # if hpf version create hpf_masker
@@ -208,6 +212,7 @@ class AttackConnection:
                 attack_type, 
                 hpf_masker,
                 input_size,
+                l2_bound=-1,
                 *args,
                 **kwargs):
         self.attack_type = attack_type
@@ -220,11 +225,15 @@ class AttackConnection:
         self.image_metric = ImageQualityMetric(['mad', 'ssim', 'dists'], protocol_file)
         self.save_dir = f"./data/survey_data/{attack_type.split('_')[0]}/vanilla" if len(attack_type.split('_')) == 1 else f"./data/survey_data/{attack_type.split('_')[1]}/hpf"
         self.check_save_dir_path()
+
         self.orig_save_dir = "./data/survey_data/orig"
-        self.l2_norm = []
-        self.mad_score = []
-        self.ssim_score = []
-        self.dists_score = []
+        self.adv_dataset_path = self.set_up_run_in_adv_dataset(attack_type, l2_bound)
+
+
+        self.l2_norm = [0.0]
+        self.mad_score = [0.0]
+        self.ssim_score = [0.0]
+        self.dists_score = [0.0]
         self.n = 1
 
     def set_report_dir(self, run_name):
@@ -264,6 +273,48 @@ class AttackConnection:
             target_labels_obj = csv.writer(target_labels_f)
             for t in target_label:
                 target_labels_obj.writerow([t.item()])
+    
+    def set_up_run_in_adv_dataset(self, spatial_adv_type, l2_bound):
+        adv_dataset_dir = "./data/perc_eval/"
+        if l2_bound > 38.0:
+            l2_bound = 'inf'
+        adv_dataset_path_for_attack = adv_dataset_dir + str(l2_bound) + '/' + spatial_adv_type
+        if not os.path.exists(adv_dataset_path_for_attack):
+            os.mkdir(adv_dataset_path_for_attack)
+        return adv_dataset_path_for_attack
+    
+    def save_to_adv_dataset(self, x_advs, l2_norms, paths):
+        l2_norms = l2_norms[1:]
+        for path, x_adv, l2 in zip(paths, x_advs, l2_norms):
+            file_name = path.split('/')[-1] + '_' + str(round(l2, ndigits=2))
+            torchvision.utils.save_image(x_adv, f'{self.adv_dataset_path}/{file_name}.png', format='PNG')
+            
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 class SparseAttack(AttackConnection):
 
@@ -325,7 +376,7 @@ class SparseAttack(AttackConnection):
                 self.dists_score.extend(dists_r)
             #torchvision.utils.save_image(orig_x, f'{self.orig_save_dir}/{self.n}.png', format='PNG')
             #torchvision.utils.save_image(perturbed_x, f'{self.save_dir}/{self.n}.png', format='PNG')
-            self.n += 1
+            self.n += len(x)
         return perturbed_x
         
 
@@ -385,7 +436,7 @@ class UniversalPatchAttack(AttackConnection):
                 self.mad_score.extend(mad_r)
                 self.ssim_score.extend(ssim_r)
                 self.dists_score.extend(dists_r)
-            self.n += 1
+            self.n += len(x)
         return perturbed_x
 
 class BlackBoxAttack(AttackConnection):
@@ -413,7 +464,6 @@ class BlackBoxAttack(AttackConnection):
                                                 *args, 
                                                 **kwargs)
         self.to_float = T.ConvertImageDtype(torch.float32)
-        self.l2_norm = []
         self.num_queries_lst = []
         self.mse_list = []
         self.n = 1
@@ -446,7 +496,9 @@ class BlackBoxAttack(AttackConnection):
         x = self.to_float(x)
         perturbed_x, num_queries = self.black_box_attack(x, target_y)
         self.num_queries_lst.extend(num_queries)
-        self.l2_norm.extend([l2.item() for l2 in self.get_l2(orig_x, perturbed_x)])
+        l2_norms = [l2.item() for l2 in self.get_l2(orig_x, perturbed_x)]
+        self.l2_norm.extend(l2_norms)
+        self.n += len(x)
         return perturbed_x
     
     def set_up_log(self, path_log_dir):
@@ -504,7 +556,7 @@ class GenerativeAttack(AttackConnection):
                 self.dists_score.extend(dists_r)
             #torchvision.utils.save_image(orig_x, f'{self.orig_save_dir}/{self.n}.png', format='PNG')
             #torchvision.utils.save_image(perturbed_x, f'{self.save_dir}/{self.n}.png', format='PNG')
-            self.n += 1
+            self.n += len(x)
         return perturbed_x
     
     def load_attack(self, attack_type, *args, **kwargs):
@@ -555,6 +607,7 @@ class WhiteBoxAttack(AttackConnection):
     def __call__(self, x, y):
         x = self.call_fn(x, y)
         x = torch.clamp(x, min=0.0, max=1.0)
+        self.n += len(x)
         return x
     
     def attack_rcw(self, x, y):
@@ -580,7 +633,6 @@ class WhiteBoxAttack(AttackConnection):
                 self.dists_score.extend(dists_r)
             #torchvision.utils.save_image(orig_x, f'{self.orig_save_dir}/{self.n}.png', format='PNG')
             #torchvision.utils.save_image(perturbed_x, f'{self.save_dir}/{self.n}.png', format='PNG')
-            self.n += 1
         return perturbed_x
     
     def attack_mc(self, x, y):
@@ -603,7 +655,6 @@ class WhiteBoxAttack(AttackConnection):
                 self.dists_score.extend(dists_r)
             #torchvision.utils.save_image(orig_x, f'{self.orig_save_dir}/{self.n}.png', format='PNG')
             #torchvision.utils.save_image(perturbed_x, f'{self.save_dir}/{self.n}.png', format='PNG')
-            self.n += 1
         return perturbed_x
 
     def attack_far(self, x, y):
@@ -626,7 +677,6 @@ class WhiteBoxAttack(AttackConnection):
                 self.dists_score.extend(dists_r)
             #torchvision.utils.save_image(orig_x, f'{self.orig_save_dir}/{self.n}.png', format='PNG')
             #torchvision.utils.save_image(perturbed_x, f'{self.save_dir}/{self.n}.png', format='PNG')
-            self.n += 1
         return perturbed_x
     
     def load_attack(self, model, attack_type, surrogate_loss, hpf_masker, *args, **kwargs):

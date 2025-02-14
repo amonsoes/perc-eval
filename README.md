@@ -207,7 +207,7 @@ PPBA: Sccore-based black-box attack that reduces the search space by restricting
 all other parameters are set by default.
 
 ```bash
-python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretrained --adversarial True --steps 10000 --spatial_adv_type ppba --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False --n_queries=5000
+python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretrained --adversarial True --steps 10000 --spatial_adv_type ppba --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False --n_queries=5000 --kappa=8
 ```
 
 <br>

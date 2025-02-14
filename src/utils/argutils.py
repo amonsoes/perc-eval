@@ -130,7 +130,8 @@ def adversarial_setup(args, filename):
                                 compression_rate=args.attack_compression_rate,
                                 consecutive_attack_compr=args.consecutive_attack_compr,
                                 is_targeted=args.is_targeted,
-                                scale_cad=args.scale_cad_for_asp)
+                                scale_cad=args.scale_cad_for_asp,
+                                add_to_adv_dataset=args.add_to_adv_dataset)
     
     if adversarial_opt.adversarial:
         if adversarial_opt.spatial_adv_type not in ['sparsefool',
