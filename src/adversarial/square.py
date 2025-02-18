@@ -46,7 +46,7 @@ class SquareAttack(Attack):
         self.device = device
 
         if l2_bound != -1:
-            self.eps = self.get_random_eps_in_range(l2_bound)
+            self.eps = self.get_eps_in_range(l2_bound)
 
 
 

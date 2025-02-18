@@ -80,7 +80,10 @@ class ImageQualityMetric:
                 results_obj = csv.writer(results_file)
                 results_obj.writerow(row)
         self.n += batch_size
-        return mad_r.tolist(), ssim_r.tolist(), dists_r.tolist()
+        if batch_size == 1:
+            return mad_r.tolist(), ssim_r.tolist(), [dists_r.tolist()]
+        else:
+            return mad_r.tolist(), ssim_r.tolist(), dists_r.tolist()
     
     def get_avg_mad(self):
         return self.mad_total / self.n

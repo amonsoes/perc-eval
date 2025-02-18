@@ -339,7 +339,11 @@ class PerC_AL(Attack):
         self.loss = nn.CrossEntropyLoss(reduction='sum')
         self.l2_bound = 0 if l2_bound == -1 else l2_bound
         self.low, self.high = self.get_iq_range_from_l2_bound(l2_bound)
-        self.low = self.get_random_l2_from_bounds(l2_bound)
+        self.low = self.get_l2_from_bounds(l2_bound)
+
+        if self.low == self.high:
+            self.low -= self.low*alpha_c
+            self.high += self.high*alpha_c
         
 
     def forward(self, inputs: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
@@ -390,7 +394,7 @@ class PerC_AL(Attack):
             alpha_l=alpha_l_min+0.5*(self.alpha_l_init-alpha_l_min)*(1+math.cos(i/self.max_iterations*math.pi))
 
             # get cross-entropy loss for adv sample, scale CE-grad to unit length, update delta by adversarial gradient
-            loss = multiplier * self.loss(self.model(self.model_trms(inputs+delta)), labels) + self.kappa
+            loss = multiplier * (self.loss(self.model(self.model_trms(inputs+delta)), labels) + self.kappa)
             loss.backward()
             grad_a=delta.grad.clone()
             delta.grad.zero_()
@@ -400,7 +404,8 @@ class PerC_AL(Attack):
             d_map=ciede2000_diff(inputs_LAB,rgb2lab_diff(inputs+delta,self.device),self.device).unsqueeze(1)
             color_dis=torch.norm(d_map.view(batch_size,-1),dim=1)
             color_loss=color_dis.sum()
-            color_loss.backward() 
+            color_loss
+            color_loss.backward()
             grad_color=delta.grad.clone()
             delta.grad.zero_()
             delta.data[mask_isadv]=delta.data[mask_isadv]-alpha_c* (grad_color.permute(1,2,3,0)/torch.norm(grad_color.view(batch_size,-1),dim=1)).permute(3,0,1,2)[mask_isadv]
@@ -420,7 +425,9 @@ class PerC_AL(Attack):
 
             if self.l2_bound != -1:
                 _ ,_ ,l2_distances = self.get_l2_loss(inputs+delta, inputs, None)
-                print(f'L2 distances: {l2_distances}, is adversarial: {mask_isadv}')
+                print(f'L2 distances: {l2_distances}, adv loss: {loss} is adversarial: {mask_isadv}')
+                if torch.all(l2_distances > self.high):
+                    self.kappa=0
                 if torch.all(l2_distances >= self.low) and torch.all(l2_distances <= self.high) and torch.all(mask_isadv):
                     break
 

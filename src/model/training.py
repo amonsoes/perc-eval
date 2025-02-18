@@ -138,9 +138,19 @@ class CNNTraining(Training):
                 x_hat = self.model(x)
                 self.utils.metrics(x_hat, y)
                 l2_norms = self.report(x_hat, y, paths)
-                self.data.post_transforms.attack.save_to_adv_dataset(x, l2_norms, paths)
+                self.data.post_transforms.attack.save_to_adv_dataset(l2_norms, paths)
+
+            # compute Acc, Recall, Precision, F1, ....
             result = self.utils.metrics.compute()
-            self.utils.logger.log_test_results(result, is_targeted=self.data.transforms.adversarial_opt.is_targeted)
+            # compute ASR and CAD
+            adds_to_adv_ds = self.data.post_transforms.attack.add_to_adv_dataset
+            if adds_to_adv_ds:
+                adv_dataset_path = self.data.post_transforms.attack.adv_dataset_path
+            else:
+                adv_dataset_path = ''
+            attack_is_tgd = self.data.transforms.adversarial_opt.is_targeted
+            self.utils.logger.log_test_results(result, is_targeted=attack_is_tgd, prune_dataset=adds_to_adv_ds, adv_dataset=adv_dataset_path)
+
             if hasattr(self.data.post_transforms, 'attack'):
                 self.utils.logger.log_iqa(self.data.post_transforms.attack)
                 if isinstance(self.data.post_transforms.attack, BlackBoxAttack):

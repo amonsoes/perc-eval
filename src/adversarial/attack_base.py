@@ -78,6 +78,46 @@ class Attack(object):
         """
         raise NotImplementedError
 
+    def get_eps_in_range(self, l2_bound, method='high'):
+        low, high = self.get_iq_range_from_l2_bound(l2_bound)
+        if method == 'random':
+            l2_bound = random.uniform(low, high)
+        elif method == 'high':
+            l2_bound = high
+        eps = self.compute_eps_by_l2_bound(l2_bound)
+        return eps
+
+    def get_l2_from_bounds(self, l2_bound, method='high'):
+        low, high = self.get_iq_range_from_l2_bound(l2_bound)
+        if method == 'random':
+            l2_bound = random.uniform(low, high)
+        elif method == 'high':
+            l2_bound = high
+        return l2_bound
+        
+
+    def compute_eps_by_l2_bound(self, l2_bound):
+        """
+        Given that every pixel in the l_inf norm contributes equally to the l2 distance
+        Assumes that the incoming image size is 3 x 224 x 224
+        """
+        return math.sqrt((l2_bound**2)/(3*224*224))
+    
+    def get_iq_range_from_l2_bound(self, l2_bound):
+        if l2_bound <= 4.0:
+            low, high = 0.0, 4.0
+        elif l2_bound <= 8.0:
+            low, high = 4.0, 8.0
+        elif l2_bound <= 15.0:
+            low, high = 8.0, 15.0
+        elif l2_bound < 23.0:
+            low, high = 15.0, 23.0
+        elif l2_bound < 38.0:
+            low, high = 23.0, 38.0
+        else:
+            low, high = 38.0, 134.0
+        return low, high
+
     def set_target_mode(self, mode):
         if mode == 'least_likely':
             self.set_mode_targeted_least_likely()
@@ -262,34 +302,7 @@ class Attack(object):
     def _recover_model_mode(self, given_training):
         if given_training:
             self.model.train()
-    
-    def get_random_eps_in_range(self, l2_bound):
-        low, high = self.get_iq_range_from_l2_bound(l2_bound)
-        rand_l2_bound = random.uniform(low, high)
-        eps = self.compute_eps_by_l2_bound(rand_l2_bound)
-        return eps
 
-    def compute_eps_by_l2_bound(self, l2_bound):
-        """
-        Given that every pixel in the l_inf norm contributes equally to the l2 distance
-        Assumes that the incoming image size is 3 x 224 x 224
-        """
-        return math.sqrt((l2_bound**2)/(3*224*224))
-    
-    def get_iq_range_from_l2_bound(self, l2_bound):
-        if l2_bound <= 4.0:
-            low, high = 0.0, 4.0
-        elif l2_bound <= 8.0:
-            low, high = 4.0, 8.0
-        elif l2_bound <= 15.0:
-            low, high = 8.0, 15.0
-        elif l2_bound < 23.0:
-            low, high = 15.0, 23.0
-        elif l2_bound < 38.0:
-            low, high = 23.0, 38.0
-        else:
-            low, high = 38.0, 134.0
-        return low, high
 
     def save(self, data_loader, save_path=None, verbose=True, return_verbose=False,
              save_predictions=False, save_clean_inputs=False, save_type='float'):

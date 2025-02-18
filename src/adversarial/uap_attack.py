@@ -17,20 +17,13 @@ class SGAUAP(Attack):
         super().__init__("SGAUAP", model, model_trms, *args, **kwargs)
         self.eps = eps
         if l2_bound != -1:
-            self.eps = self.get_random_eps_in_range(l2_bound)
+            self.eps = self.get_eps_in_range(l2_bound)
 
 
         if random_uap:
             self.uap = torch.empty((1, 3, 224, 224)).uniform_(-self.eps, self.eps).to(self.device)
         else:  
             self.uap = self.load_uap('./src/adversarial/resources/sga-resnet152-eps.pth')
-
-    def compute_eps_by_l2_bound(self, l2_bound):
-        """
-        Given that every pixel in the l_inf norm contributes equally to the l2 distance
-        Assumes that the incoming image size is 3 x 224 x 224
-        """
-        return math.sqrt((l2_bound**2)/(3*224*224))
 
     def load_uap(self, uap_path):
         uap = torch.load(uap_path).to(self.device)
@@ -65,19 +58,12 @@ class SGDUAP(Attack):
         super().__init__("SGDUAP", model, model_trms, *args, **kwargs)
         self.eps = eps
         if l2_bound != -1:
-            self.eps = self.get_random_eps_in_range(l2_bound)
+            self.eps = self.get_eps_in_range(l2_bound)
 
         if random_uap:
             self.uap = torch.empty((1, 3, 224, 224)).uniform_(-self.eps, self.eps).to(self.device)
         else:  
             self.uap = self.load_uap('./src/adversarial/resources/sgd-resnet50-eps10.pth')
-
-    def compute_eps_by_l2_bound(self, l2_bound):
-        """
-        Given that every pixel in the l_inf norm contributes equally to the l2 distance
-        Assumes that the incoming image size is 3 x 224 x 224
-        """
-        return math.sqrt((l2_bound**2)/(3*224*224))
     
     def forward(self, images, labels):
         r"""

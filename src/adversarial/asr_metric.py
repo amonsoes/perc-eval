@@ -1,10 +1,15 @@
 import csv
 import math
 import torch
+import os
 
 class ASR:
     
-    def __init__(self, path, basepath, is_targeted=False):
+    def __init__(self, path, basepath, is_targeted=False, prune_dataset=False, adv_dataset=''):
+        """
+        set prune_dataset to True if you want to delete the samples out of the adv dataset
+        that did not successfully fool the target model.
+        """
         if is_targeted:
             self.target_report = path + '/' + 'target_labels.csv'
         used_attack_compression, compression_value = self.check_for_compression(path)
@@ -16,6 +21,9 @@ class ASR:
         self.success = 0
         self.eps = 1e-7
         self.call_fn = self.compute_targeted if is_targeted else self.compute_untargeted
+        self.prune_dataset = prune_dataset
+        self.adv_dataset = adv_dataset
+
 
     def check_len(self, results_f, base_f):
         with open(self.path, 'r') as results_f:
@@ -55,10 +63,17 @@ class ASR:
                 next(results_obj)
                 next(base_f)
                 for r_line, b_line in zip(results_obj, base_obj):
+                    file_hash = b_line[0].split('/')[-1]
+
                     if b_line[1] == b_line[2]: # check if base model predicted correctly
                         if r_line[-1] != '0.0': # check if an attack actually happened 
                             if r_line[1] != r_line[2]: # check if adv model forced misclassification
                                 self.success +=1
+                            elif self.prune_dataset: # if prune_dataset, delete unsuccessful adv sample from adv dataset
+                                list_of_files = [img for img in os.listdir(self.adv_dataset) if img.startswith(file_hash)]
+                                for fi in list_of_files:
+                                    fi_path = self.adv_dataset + '/' + fi
+                                    os.remove(fi_path)
                             self.n += 1
                 return self.success / (self.n + self.eps)
         
@@ -74,11 +89,17 @@ class ASR:
                     next(base_f)
                     next(targets_obj)
                     for r_line, b_line, t_line in zip(results_obj, base_obj, targets_obj):
+                        file_hash = b_line[0].split('/')[-1]
                         if b_line[1] == b_line[2]: # check if base model predicted correctly
                             if r_line[-1] != '0.0': # check if an attack actually happened 
                                 if r_line[1] != r_line[2]: # check if adv model forced misclassification
                                     if r_line[1] == t_line[0]: # check if model predicted target class from attack
                                         self.success += 1
+                                    elif self.prune_dataset: # if prune_dataset, delete unsuccessful adv sample from adv dataset
+                                        list_of_files = [img for img in os.listdir(self.adv_dataset) if img.startswith(file_hash)]
+                                        for fi in list_of_files:
+                                            fi_path = self.adv_dataset + '/' + fi
+                                            os.remove(fi_path)
                                 self.n += 1
                     return self.success / (self.n + self.eps)
         

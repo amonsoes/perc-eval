@@ -34,7 +34,7 @@ class CGNCAttack(Attack):
         self.label_flag = 'N8' # params from original repo
 
         if l2_bound != -1:
-            self.eps = self.get_random_eps_in_range(l2_bound)
+            self.eps = self.get_eps_in_range(l2_bound)
 
 
 

@@ -135,13 +135,16 @@ class PGDL2(Attack):
         self.supported_mode = ["default", "targeted"]
         self.loss = nn.CrossEntropyLoss()
         if l2_bound != -1:
-            self.eps = self.get_iq_range_from_l2_bound(l2_bound)
+            self.eps = self.get_l2_from_bounds(l2_bound)
 
-
-    def get_random_l2_from_bounds(self, l2_bound):
+    def get_l2_from_bounds(self, l2_bound, method='high'):
         low, high = self.get_iq_range_from_l2_bound(l2_bound)
-        rand_l2_bound = random.uniform(low, high)
-        return rand_l2_bound
+        if method == 'random':
+            rand_l2_bound = random.uniform(low, high)
+            return rand_l2_bound
+        elif method == 'high':
+            return high
+
 
     def forward(self, images, labels):
         r"""

@@ -95,12 +95,15 @@ class CW(Attack):
         self.eps = eps # this is needed for a maximum perturbation estimation
         self.l2_bound = 0 if l2_bound == -1 else l2_bound
         self.low, self.high = self.get_iq_range_from_l2_bound(l2_bound)
-        self.low = self.get_random_l2_from_bounds(l2_bound)
+        self.low = self.get_l2_from_bounds(l2_bound)
 
-    def get_random_l2_from_bounds(self, l2_bound):
+    def get_l2_from_bounds(self, l2_bound, mode='high'):
         low, high = self.get_iq_range_from_l2_bound(l2_bound)
-        rand_l2_bound = random.uniform(low, high)
-        return rand_l2_bound
+        if mode == 'random':
+            l2_bound = random.uniform(low, high)
+        elif mode == 'high':
+            l2_bound = high
+        return l2_bound
 
     def get_iq_range_from_l2_bound(self, l2_bound):
         if l2_bound <= 4.0:

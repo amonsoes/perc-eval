@@ -523,7 +523,7 @@ class Logger:
     def log_eval_results(self, epoch_train_loss, epoch_val_loss, epoch_result):
         pass
 
-    def log_test_results(self, result, is_targeted=False, hfm=None):
+    def log_test_results(self, result, is_targeted=False, hfm=None, prune_dataset=False, adv_dataset=''):
         
         if self.create_log_file:
             print(result)
@@ -535,7 +535,7 @@ class Logger:
                     f.write(f'{k}:{result[k]}\n')
                 if self.adversarial_opt.adversarial:
                     base_path = "/".join(self.run_name.split('/')[:-1])
-                    asr_metric = ASR(self.run_name, f'{base_path}/{self.base_run_name}', is_targeted)
+                    asr_metric = ASR(self.run_name, f'{base_path}/{self.base_run_name}', is_targeted, prune_dataset, adv_dataset)
                     cad_metric = ConditionalAverageRate(self.run_name, f'{base_path}/{self.base_run_name}', scale_for_asp=self.adversarial_opt.scale_cad)
                     #spr_metric = SPR(self.run_name, f'{base_path}/{self.base_run_name}')
                     asr_r = asr_metric()

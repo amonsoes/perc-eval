@@ -21,7 +21,7 @@ class PPBA(Attack):
                 order='strided',
                 r=2352,
                 n_queries=2000,
-                rho=0.01,
+                rho=0.05,
                 l2_bound=-1,
                 kappa=0,
                 *args, 
@@ -42,7 +42,11 @@ class PPBA(Attack):
         self.l2_bound = l2_bound
         self.l2_bound = 0 if l2_bound == -1 else l2_bound
         self.low, self.high = self.get_iq_range_from_l2_bound(l2_bound)
-        self.low = self.get_random_l2_from_bounds(l2_bound)
+        self.low = self.get_l2_from_bounds(l2_bound)
+
+        if self.low == self.high:
+            self.low -= self.low*0.1
+            self.high += self.high*0.1
 
         image_size = 299 if self.model.model_name == 'inception' else 224
         self.image_size = image_size
@@ -145,9 +149,10 @@ class PPBA(Attack):
 
             if prev_f <= 0:
                 is_success = 1
-                break
 
             if self.l2_bound != 0:
+                if torch.all(l2_scores > self.low):
+                    self.kappa = 0
                 is_success = (prev_f - self.kappa) <= 0.0
                 print(f'samples are adversarial:{is_success}')
                 if torch.all(l2_scores >= self.low) and torch.all(l2_scores <= self.high) and is_success:
@@ -198,7 +203,7 @@ class PPBA(Attack):
         one_hot_labels = torch.eye(len(outputs[0]))[y].to(self.device)
 
         i, ind_i = torch.max((1 - one_hot_labels) * outputs, dim=1) # max logit that is not the actual label
-        j, ind_j = torch.max((one_hot_labels) * outputs, dim=1) # max logit
+        j, ind_j = torch.max((one_hot_labels) * outputs, dim=1) # either gt or target logit
 
         if targeted:
             return torch.clamp((i - j) + self.kappa, min=0)

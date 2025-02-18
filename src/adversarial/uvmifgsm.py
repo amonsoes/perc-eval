@@ -42,7 +42,7 @@ class VMIFGSM(Attack):
         self.model_trms = model_trms
         self.alpha = eps / steps
         if l2_bound != -1:
-            self.eps = self.get_random_eps_in_range(l2_bound)
+            self.eps = self.get_eps_in_range(l2_bound)
 
 
     def forward(self, images, labels):

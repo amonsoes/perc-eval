@@ -47,6 +47,10 @@ class RCW(CW):
             self.q_search_type = self.return_fixed
         else:
             self.q_search_type = self.brute_force_search_for_q
+
+        if self.low == self.high:
+            self.low -= self.low*0.1
+            self.high += self.high*0.1
         
     def compress(self, img, jpeg_quality):
         img = img * 255
@@ -324,6 +328,8 @@ class RCW(CW):
                 # either the current adv_images is the new best_adv_images or the old one depending on mask
 
                 if self.l2_bound != 0:
+                    if torch.all(real_losses > self.high):
+                        self.kappa = 0
                     if torch.all(real_losses >= self.low) and torch.all(real_losses <= self.high) and torch.all(is_adversarial):
                         break
 

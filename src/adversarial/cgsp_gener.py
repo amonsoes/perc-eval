@@ -34,7 +34,7 @@ class CGSPAttack(Attack):
         self.label_flag = 'N8'
 
         if l2_bound != -1:
-            self.eps = self.get_random_eps_in_range(l2_bound)
+            self.eps = self.get_eps_in_range(l2_bound)
 
 
     def load_from_file(self, pretrained, uses_inception):

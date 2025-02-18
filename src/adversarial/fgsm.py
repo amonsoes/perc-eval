@@ -136,7 +136,7 @@ class HpfFGSM(FGSM):
         super().__init__(model, *args, **kwargs)
         self.hpf_masker = hpf_masker
         if l2_bound != -1:
-            self.eps = self.get_random_eps_in_range(l2_bound)
+            self.eps = self.get_eps_in_range(l2_bound)
 
 
     def get_eps_delta(self, mask):
