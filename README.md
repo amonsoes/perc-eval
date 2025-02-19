@@ -54,12 +54,12 @@ We conducted our experiments on a broad set of diverse adversarial attacks. Here
 
 ### Run Attacks
 
-PGD: BIM with random start
+PGDL2: L2-bound BIM with random start.
 
 - random_start: If True, starts from random perturbation.
 
 ```bash
-python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type pgd --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False --random_start True
+python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type pgdl2 --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False --random_start True
 ```
 
 <br>
