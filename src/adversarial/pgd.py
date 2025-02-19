@@ -128,7 +128,6 @@ class PGDL2(Attack):
     ):
         super().__init__("PGDL2", model, model_trms, *args, **kwargs)
         self.eps = eps
-        self.alpha = eps / steps
         self.steps = steps
         self.random_start = random_start
         self.eps_for_division = eps_for_division
@@ -136,6 +135,7 @@ class PGDL2(Attack):
         self.loss = nn.CrossEntropyLoss()
         if l2_bound != -1:
             self.eps = self.get_l2_from_bounds(l2_bound)
+        self.alpha = eps / steps
 
     def get_l2_from_bounds(self, l2_bound, method='high'):
         low, high = self.get_iq_range_from_l2_bound(l2_bound)

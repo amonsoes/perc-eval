@@ -50,6 +50,8 @@ We conducted our experiments on a broad set of diverse adversarial attacks. Here
 - [SquareAttack](https://arxiv.org/abs/1912.00049)
 - [PPBA](https://arxiv.org/abs/2005.03837)
 
+If you want to add a run to the adv dataset, use --add_to_adv_dataset=True and set --l2_bound to the specific bound.
+
 
 
 ### Run Attacks
@@ -59,7 +61,7 @@ PGDL2: L2-bound BIM with random start.
 - random_start: If True, starts from random perturbation.
 
 ```bash
-python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type pgdl2 --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False --random_start True
+python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type pgdl2 --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False
 ```
 
 <br>
