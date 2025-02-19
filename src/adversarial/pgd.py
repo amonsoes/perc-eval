@@ -135,7 +135,7 @@ class PGDL2(Attack):
         self.loss = nn.CrossEntropyLoss()
         if l2_bound != -1:
             self.eps = self.get_l2_from_bounds(l2_bound)
-        self.alpha = eps / steps
+        self.alpha = self.eps / steps
 
     def get_l2_from_bounds(self, l2_bound, method='high'):
         low, high = self.get_iq_range_from_l2_bound(l2_bound)
