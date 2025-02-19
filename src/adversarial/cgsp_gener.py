@@ -54,7 +54,6 @@ class CGSPAttack(Attack):
 
 
     def load_from_file(self, pretrained):
-
         netG = ConGeneratorResnet(nz=self.nz, layer=self.layer)
         state_dict = torch.load(pretrained, map_location=self.device)
         netG.load_state_dict(state_dict=state_dict)
