@@ -29,6 +29,7 @@ from src.adversarial.adversarial_rounding import FastAdversarialRounding
 from src.adversarial.fgsm import FGSM, HpfFGSM
 from src.adversarial.dim import DIM
 from src.adversarial.cgnc_gener import CGNCAttack
+from src.adversarial.cgsp_gener import CGSPAttack
 from src.adversarial.sparse_attacks import SparseSigmaAttack, SparseFool
 from src.adversarial.square import SquareAttack
 
@@ -544,6 +545,8 @@ class GenerativeAttack(AttackConnection):
     def load_attack(self, attack_type, *args, **kwargs):
         if attack_type == 'cgnc':
             attack = CGNCAttack(self.device, *args, **kwargs)
+        elif attack_type == 'cgsp':
+            attack = CGSPAttack(self.device, *args, **kwargs)
         else:
             raise ValueError('ADVERSARIAL ATTACK NOT RECOGNIZED FROM TYPE. Change spatial_adv_type in options')
         return attack

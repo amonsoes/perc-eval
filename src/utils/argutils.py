@@ -196,7 +196,7 @@ def adversarial_setup(args, filename):
                 spatial_attack_params.dataprior = args.dataprior
                 spatial_attack_params.sigma = args.sigma
                 spatial_attack_params.learning_rate = args.learning_rate
-        elif adversarial_opt.spatial_adv_type in ['cgnc']:
+        elif adversarial_opt.spatial_adv_type in ['cgnc', 'cgsp']:
             spatial_attack_params.arch = args.arch
             if args.is_targeted:
                 spatial_attack_params.target_mode = args.target_mode
