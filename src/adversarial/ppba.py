@@ -184,9 +184,9 @@ class PPBA(Attack):
             low, high = 4.0, 8.0
         elif l2_bound <= 15.0:
             low, high = 8.0, 15.0
-        elif l2_bound < 23.0:
+        elif l2_bound <= 23.0:
             low, high = 15.0, 23.0
-        elif l2_bound < 38.0:
+        elif l2_bound <= 38.0:
             low, high = 23.0, 38.0
         else:
             low, high = 38.0, 134.0
