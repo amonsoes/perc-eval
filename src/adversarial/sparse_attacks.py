@@ -152,6 +152,7 @@ class SparseSigmaAttack(PGD):
         self.eps = int(self.eps) #in args eps is originally cast to float
         if l2_bound != -1:
             self.eps = self.get_eps_in_range(l2_bound)
+        self.alpha = self.eps / self.steps
 
     
     """def forward(self, x_nat, y_nat):

@@ -53,7 +53,6 @@ class DIM(Attack):
         self.eps = eps
         self.steps = steps
         self.decay = decay
-        self.alpha = eps / steps
         self.loss = surrogate_loss
         self.resize_rate = resize_rate
         self.diversity_prob = diversity_prob
@@ -62,7 +61,7 @@ class DIM(Attack):
 
         if l2_bound != -1:
             self.eps = self.get_eps_in_range(l2_bound)
-            #self.eps = self.compute_eps_by_l2_bound(l2_bound)
+        self.alpha = self.eps / steps
 
     def input_diversity(self, x):
         img_size = x.shape[-1]

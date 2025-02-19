@@ -40,9 +40,9 @@ class VMIFGSM(Attack):
         self.supported_mode = ['default', 'targeted']
         self.loss = surrogate_loss
         self.model_trms = model_trms
-        self.alpha = eps / steps
         if l2_bound != -1:
             self.eps = self.get_eps_in_range(l2_bound)
+        self.alpha = self.eps / steps
 
 
     def forward(self, images, labels):

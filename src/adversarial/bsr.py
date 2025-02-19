@@ -18,7 +18,6 @@ class MIFGSM(Attack):
     def __init__(self, model, model_trms, eps=8/255, steps=10, decay=1.0, l2_bound=-1, *args, **kwargs):
         super().__init__("MIFGSM", model, model_trms,  *args, **kwargs)
         self.eps = eps
-        self.alpha = eps / steps
         self.steps = steps
         self.decay = decay
         self.supported_mode = ["default", "targeted"]
@@ -26,6 +25,7 @@ class MIFGSM(Attack):
 
         if l2_bound != -1:
             self.eps = self.get_eps_in_range(l2_bound)
+        self.alpha = self.eps / steps
 
 
 
