@@ -228,7 +228,8 @@ class AttackConnection:
         self.check_save_dir_path()
 
         self.orig_save_dir = "./data/survey_data/orig"
-        self.adv_dataset_path = self.set_up_run_in_adv_dataset(attack_type, l2_bound)
+        if l2_bound != -1:
+            self.adv_dataset_path = self.set_up_run_in_adv_dataset(attack_type, l2_bound)
 
 
         self.l2_norm = []

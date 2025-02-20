@@ -130,14 +130,14 @@ class HPFMasker:
             hpf_mask : mask containing LoG and DCT tradeoff coefficients [0, 1]
         """
         img_shape = ori_images.shape
-        log_masks = torch.ones(img_shape)
-        dct_coeff_masks = torch.ones(img_shape)
+        log_masks = torch.zeros(img_shape)
+        dct_coeff_masks = torch.zeros(img_shape)
         
         for e, (img, norm_img) in enumerate(zip(ori_images, norm_images)):
             log_mask = self.log(img.cpu())
-            if log_mask.min().item() < 0:
-                log_mask = log_mask + (-1*log_mask.min().item())
-            log_mask = log_mask / log_mask.max().item()
+            #if log_mask.min().item() < 0:
+            #    log_mask = log_mask + (-1*log_mask.min().item())
+            log_mask = torch.clamp(log_mask / log_mask.max().item(), min=0.0, max=1.0)
             log_masks[e] = log_mask
             dct_coeffs, fgsm_coeffs = self.dct(norm_img)
             dct_coeff_masks[e] = fgsm_coeffs
@@ -150,7 +150,8 @@ class HPFMasker:
         if self.lf_boosting > 0.0:
             inv_mask = 1 - hpf_mask
             hpf_mask = (self.lf_boosting*inv_mask) + hpf_mask
-        
+            
+
         return hpf_mask
 
     def get_log_and_dct_mask_for_299(self, ori_images, norm_images):
@@ -318,7 +319,11 @@ class LaplacianOfGaussian:
         self.sigma = sigma
 
     def __call__(self, img):
-        return torch.tensor(nd.gaussian_laplace(img, self.sigma))
+        log_mask = torch.zeros_like(img)
+        for e, ig in enumerate(img):
+            log_m = torch.tensor(nd.gaussian_laplace(ig, self.sigma))
+            log_mask[e] = log_m
+        return log_mask
     
 if __name__ == '__main__':
     pass
