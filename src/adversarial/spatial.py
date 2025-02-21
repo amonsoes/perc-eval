@@ -204,8 +204,8 @@ class AttackLoader:
         return model 
 
     def get_l2(self, orig_img, adv_img):
-        distance = (orig_img - adv_img).pow(2).sum().sqrt()
-        return (distance / orig_img.max()).item()
+        distance = (adv_images - images).pow(2).sum(dim=(1,2,3)).sqrt()
+        return distance
 
 class AttackConnection:
 

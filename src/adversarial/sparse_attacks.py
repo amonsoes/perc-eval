@@ -167,6 +167,7 @@ class SparseSigmaAttack(PGD):
         if l2_bound != -1:
             self.epsilon = self.get_eps_in_range(l2_bound, k)
             self.alpha = self.epsilon / self.steps
+            self.l2_bound = l2_bound
 
 
     def get_eps_in_range(self, l2_bound, k, method='high'):
@@ -175,7 +176,7 @@ class SparseSigmaAttack(PGD):
             l2_bound = random.uniform(low, high)
         elif method == 'high':
             l2_bound = high
-        return l2_bound / math.sqrt(k*3)
+        return l2_bound / math.sqrt(k)
 
 
 
@@ -317,6 +318,58 @@ class SparseSigmaAttack(PGD):
             
         return torch.from_numpy(x2).permute(0, 3, 1, 2)
 
+
+    def forward(self, x_nat, y_nat):
+        ''' PGD attack wrt L0-norm + box constraints
+        
+            it returns adversarial examples (if found) adv for the images x_nat, with correct labels y_nat,
+            such that:
+                - each image of the batch adv differs from the corresponding one of
+                x_nat in at most k pixels
+                - lb <= adv - x_nat <= ub
+            
+            it returns also a vector of flags where 1 means no adversarial example found
+            (in this case the original image is returned in adv) 
+        '''
+
+        x2 = x_nat.clone().detach()
+            
+        adv_not_found = torch.ones_like(y_nat)
+        adv = torch.zeros_like(x_nat)
+
+        for i in range(self.steps):
+
+            pred, grad = self.get_pred_and_grad(x2, y_nat)
+
+            #project to L0+L_inf box
+            batch_size, c, h, w = grad.shape
+            delta = self.alpha*grad.sign()
+
+            importance = grad.abs()
+
+            # Flatten spatial dimensions for sorting
+            importance_flat = importance.view(batch_size,-1)  # Shape: (batch, ch* width * height)
+            values, topk_indices = torch.topk(importance_flat, k=self.k, dim=-1)
+            
+            # Create a zero mask of the same shape
+            mask = torch.zeros_like(importance_flat, dtype=torch.bool)
+
+            # Scatter 1s into the mask at the top-k locations
+            mask.scatter_(dim=-1, index=topk_indices, value=True)
+
+            # Reshape back to original (batch, width, height)
+            mask = mask.view(batch_size,c, w, h)
+            delta[~mask] = 0
+
+            delta_norm = torch.norm(delta.view(batch_size, -1), p=2, dim=-1, keepdim=True)  # L2 norm per sample
+            scale_factor = self.alpha / delta_norm  # Scale perturbation
+            delta = delta * scale_factor.view(batch_size, 1, 1, 1) 
+
+            x2 = x2 + delta
+            x2 = torch.clamp(x2, min=0.0, max=1.0)
+            
+        return x2
+
     def project_L0_box(self, delta, lb, ub):
         ''' projection of the batch delta to a batch x such that:
                 - each image of the batch x has at most k pixels with non-zero channels
@@ -327,11 +380,11 @@ class SparseSigmaAttack(PGD):
         # Ensure initial box constraints
         x = np.clip(x, lb, ub)
 
-        # Compute pixel-wise importance: sum over RGB channels if needed
-        importance = np.sum(np.abs(x), axis=-1)  # Shape: (batch, height, width)
+        # Compute pixel-wise importance: sum over color channels
+        importance = np.sum(np.abs(x), axis=3)  # Shape: (batch, width, height)
 
         # Flatten spatial dimensions for sorting
-        importance_flat = importance.reshape(importance.shape[0], -1)
+        importance_flat = importance.reshape(importance.shape[0], -1)  # Shape: (batch, width * height)
 
         # Get the indices of the k most important perturbed pixels
         top_k_indices = np.argsort(-importance_flat, axis=-1)[:, :self.k]  # Sort descending
@@ -341,11 +394,12 @@ class SparseSigmaAttack(PGD):
         batch_indices = np.arange(importance_flat.shape[0])[:, None]  # Expand for batch indexing
         mask[batch_indices, top_k_indices] = True  # Select top-k indices
 
-        # Reshape mask back to image dimensions and expand for RGB channels
-        mask = mask.reshape(importance.shape)[:, :, :, None]  
+        # Reshape mask back to image dimensions and expand for color channels
+        mask = mask.reshape(importance.shape + (1,))  # Shape: (batch, width, height, 1)
 
         # Set perturbation values at selected locations
         x = np.where(mask, np.sign(delta) * self.epsilon, 0)  # Keep sign, set to max allowed perturbation
+
         # Enforce box constraints again
         x = np.clip(x, lb, ub)
             
@@ -360,6 +414,43 @@ class SparseSigmaAttack(PGD):
         #x = np.clip(x, a_min=-self.epsilon, a_max=self.epsilon)
         return x
 
+    def project_L0_box(self, grad):
+        ''' projection of the batch delta to a batch x such that:
+                - each image of the batch x has at most k pixels with non-zero channels
+                - lb <= x <= ub '''
+        batch_size, c, h, w = grad.shape
+        delta = self.alpha*grad.sign()
+
+        
+        # Ensure initial box constraints
+        delta = torch.clamp(delta, max=self.epsilon, min=-self.epsilon)
+
+        # Compute pixel-wise importance: sum over color channels
+        importance = grad.abs().sum(dim=1)  # batch x ch x h x w -> batch x 1 x h x w 
+
+        # Flatten spatial dimensions for sorting
+        importance_flat = importance.reshape(importance.shape[0], -1)  # Shape: (batch, width * height)
+        values, topk_indices = torch.topk(importance.view(batch_size,-1), k=self.k, dim=-1)
+        
+
+        # Create a zero mask of the same shape
+        mask = torch.zeros_like(importance_flat, dtype=torch.bool)
+
+        # Scatter 1s into the mask at the top-k locations
+        mask.scatter_(dim=-1, index=topk_indices, value=True)
+
+        # Reshape back to original (batch, width, height)
+        mask = mask.view(batch_size, w, h)
+        mask = mask.unsqueeze(1).expand(-1, 3, -1, -1)
+        delta[~mask] = 0
+        return delta
+
+
+    def project_L0_box(self, grad):
+        ''' projection of the batch delta to a batch x such that:
+                - each image of the batch x has at most k pixels with non-zero channels
+                - lb <= x <= ub '''
+
     def get_pred_and_grad(self, x_nat, y_nat):
         x = torch.from_numpy(x_nat).permute(0, 3, 1, 2).float()
         x.requires_grad_()
@@ -373,4 +464,16 @@ class SparseSigmaAttack(PGD):
         grad = grad.detach().permute(0, 2, 3, 1).numpy()
 
         pred = (output.detach().cpu().max(dim=-1)[1] == y).numpy()
+        return pred, grad
+
+    def get_pred_and_grad(self, x_nat, y_nat):
+        x_nat.requires_grad_()
+
+        with torch.enable_grad():
+            output = self.model(self.model_trms(x_nat.to(self.device)))
+            loss = self.loss(output, y_nat.to(self.device))
+
+        grad = torch.autograd.grad(loss, x_nat)[0]
+
+        pred = (output.detach().cpu().max(dim=-1)[1] == y_nat).numpy()
         return pred, grad
