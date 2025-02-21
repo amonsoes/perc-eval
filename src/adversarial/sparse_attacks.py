@@ -2,6 +2,7 @@
 import numpy as np
 import torch
 import math
+import random
 
 from torchattacks.attacks.deepfool import DeepFool
 from src.adversarial.pgd import PGD
@@ -144,55 +145,41 @@ class SparseFool(Attack):
 class SparseSigmaAttack(PGD):
     """
     https://arxiv.org/pdf/1909.05040
+
+    x_test in the format bs (batch size) x heigth x width x channels
+    y_test in the format bs
+
+    This is the L_0 + L_inf attack from the paper, with the following mods:
+    - instead of the L2-bound perturbation of alpha, we make the step-perturbation L_inf-bound
+    - instead of perturbing at most k pixels per channel, we ALWAYS perturb k pixel per channel
+    - we compute the epsilon bound by L2/math.sqrt(k*3), diving the L2 distance on the L_inf bound k pixek perturbations
     """
 
-    def __init__(self, sparse_attack_kappa=-1, l2_bound=-1, *args, **kwargs):
+    def __init__(self, sparse_attack_kappa=-1, l2_bound=-1, k=400, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.kappa = sparse_attack_kappa
-        self.eps = int(self.eps) #in args eps is originally cast to float
+        #in args eps is originally cast to float
+        self.l2_bound = l2_bound
+        self.epsilon = 0.8
+        self.alpha = 120000.0/255.0/2.0
+        self.k = k
+        self.random_start=False
         if l2_bound != -1:
-            self.eps = self.get_eps_in_range(l2_bound)
-        self.alpha = self.eps / self.steps
+            self.epsilon = self.get_eps_in_range(l2_bound, k)
+            self.alpha = self.epsilon / self.steps
 
-    
-    """def forward(self, x_nat, y_nat):
-        ''' PGD attack wrt L0-norm + sigma-map constraints
-        
-            it returns adversarial examples (if found) adv for the images x_nat, with correct labels y_nat,
-            such that:
-                - each image of the batch adv differs from the corresponding one of
-                x_nat in at most k pixels
-                - (1 - kappa*sigma)*x_nat <= adv <= (1 + kappa*sigma)*x_nat
-            
-            it returns also a vector of flags where 1 means no adversarial example found
-            (in this case the original image is returned in adv) '''
-        
-        self.sigma = self.sigma_map(x_nat)
-        if self.random_start:
-            adv_x = x_nat + np.random.uniform(-self.eps, self.eps, x_nat.shape)
-            adv_x = torch.clamp(adv_x, min=0.0, max=1.0)
-        else:
-            adv_x = torch.clone(x_nat).detach()
-            
-        adv_not_found = torch.ones(y_nat.shape)
-        adv = torch.zeros(x_nat.shape, dtype=torch.float64)
 
-        for i in range(self.steps):
-            if i > 0:
-                adv_x.requires_grad = True
-                #pred, grad = sess.run([attack.model.correct_prediction, attack.model.grad], feed_dict={attack.model.x_input: x2, attack.model.y_input: y_nat})
-                pred, grad = self.get_pred_and_grad(adv_x, y_nat)
-                adv_not_found = torch.minimum(adv_not_found, pred.to(torch.int64))
-                adv[~pred] = torch.clone(adv_x[~pred])
-                
-                grad /= (1e-10 + torch.sum(grad.abs(), axis=(1,2,3), keepdims=True))
-                adv_x = torch.add(adv_x, (torch.rand(grad.shape)-0.5)*1e-12 + self.steps * grad).detach()
-            
-            adv_x = self.project_L0_sigma(adv_x, self.eps, self.sigma, self.kappa, x_nat).detach()
-            
-        return adv, adv_not_found"""
+    def get_eps_in_range(self, l2_bound, k, method='high'):
+        low, high = self.get_iq_range_from_l2_bound(l2_bound)
+        if method == 'random':
+            l2_bound = random.uniform(low, high)
+        elif method == 'high':
+            l2_bound = high
+        return l2_bound / math.sqrt(k*3)
 
-    def forward(self, x_nat, y_nat):
+
+
+    def forward_2(self, x_nat, y_nat):
         ''' PGD attack wrt L0-norm + sigma-map constraints
         
             it returns adversarial examples (if found) adv for the images x_nat, with correct labels y_nat,
@@ -206,7 +193,7 @@ class SparseSigmaAttack(PGD):
         
         self.sigma = self.sigma_map(x_nat)
         self.sigma = self.sigma.numpy()
-        x_nat = x_nat.numpy()
+        x_nat = x_nat.permute(0, 2, 3, 1).numpy()
         y_nat = y_nat.numpy()
         if self.random_start:
             x2 = x_nat + np.random.uniform(-self.kappa, self.kappa, x_nat.shape)
@@ -227,11 +214,11 @@ class SparseSigmaAttack(PGD):
                 adv[np.logical_not(pred)] = np.copy(x2[np.logical_not(pred)])
                 
                 grad /= (1e-10 + np.sum(np.abs(grad), axis=(1,2,3), keepdims=True))
-                x2 = np.add(x2, (np.random.random_sample(grad.shape)-0.5)*1e-12 + self.steps * grad, casting='unsafe')
+                x2 = np.add(x2, (np.random.random_sample(grad.shape)-0.5)*1e-12 + self.alpha * grad, casting='unsafe')
             
             x2 = self.project_L0_sigma(x2, self.eps, self.sigma, self.kappa, x_nat)
             
-        return adv, adv_not_found
+        return torch.from_numpy(adv).permute(0, 3, 1, 2)
 
     def get_pred_and_grad(self, images, labels):
         output, grad =  super().get_pred_and_grad(images, labels)
@@ -286,31 +273,104 @@ class SparseSigmaAttack(PGD):
         x  = x_nat + lmbd*sigma*x_nat*((p12 - p22) >= p3.reshape([-1, 1, 1, 1]))
         
         return x
+    
 
-    """def project_L0_sigma(self, y, eps, sigma, kappa, x_nat):
-        ''' projection of the batch y to a batch x such that:
-                - 0 <= x <= 1
-                - each image of the batch x differs from the corresponding one of
-                x_nat in at most eps pixels
-                - (1 - kappa*sigma)*x_nat <= x <= (1 + kappa*sigma)*x_nat '''
+    def forward(self, x_nat, y_nat):
+        ''' PGD attack wrt L0-norm + box constraints
         
-        x = torch.clone(y).detach()
-        p1 = 1.0/torch.clamp(sigma, min=1e-12)*(x_nat > 0).to(torch.float32) + 1e12*(x_nat == 0).to(torch.float32)
-        p2 = 1.0/torch.clamp(sigma, min=1e-12)*(1.0/torch.clamp(x_nat, min=1e-12) - 1)*(x_nat > 0).to(torch.float32) + 1e12*(x_nat == 0).to(torch.float32) + 1e12*(sigma == 0).to(torch.float32)
-        lmbd_l = torch.clamp(torch.amax(-p1, axis=-1, keepdims=True), min=-kappa)
-        lmbd_u = torch.clamp(torch.amin(p2, axis=-1, keepdims=True), max=kappa)
-        
-        lmbd_unconstr = torch.sum((y - x_nat)*sigma*x_nat, axis=-1, keepdims=True)/torch.maximum(torch.tensor([1e-12]), torch.sum((sigma*x_nat)**2, axis=-1, keepdims=True))
-        lmbd = torch.maximum(lmbd_l, torch.minimum(lmbd_unconstr, lmbd_u))
-        
-        p12 = torch.sum((y - x_nat)**2, axis=-1, keepdims=True)
-        p22 = torch.sum((y - (1 + lmbd*sigma)*x_nat)**2, axis=-1, keepdims=True)
-        p12_p22_diff = (p12 - p22).reshape(p12.shape[0], -1)
-        p3 = torch.sort(p12_p22_diff, dim=1, descending=False).values[:, -eps]  # Select the kth smallest value
-        #p3 = torch.sort(torch.reshape(p12 - p22, (x.shape[0], -1)))[0][:, -k]
-        
-        x  = x_nat + lmbd*sigma*x_nat*((p12 - p22) >= p3.reshape([-1, 1, 1, 1]))
-        
-        return x"""
+            it returns adversarial examples (if found) adv for the images x_nat, with correct labels y_nat,
+            such that:
+                - each image of the batch adv differs from the corresponding one of
+                x_nat in at most k pixels
+                - lb <= adv - x_nat <= ub
+            
+            it returns also a vector of flags where 1 means no adversarial example found
+            (in this case the original image is returned in adv) 
+        '''
+        x_nat = x_nat.permute(0, 2, 3, 1).numpy()
+        y_nat = y_nat.numpy()
+        lb = np.maximum(-self.epsilon, -x_nat)
+        ub = np.minimum(self.epsilon, 1.0 - x_nat)
+        if self.random_start:
+            x2 = x_nat + np.random.uniform(lb, ub, x_nat.shape)
+            x2 = np.clip(x2, 0, 1)
+        else:
+            x2 = np.copy(x_nat)
+            
+        adv_not_found = np.ones(y_nat.shape)
+        adv = np.zeros(x_nat.shape)
 
+        for i in range(self.steps):
+            if i > 0:
+                #pred, grad = sess.run([attack.model.correct_prediction, attack.model.grad], feed_dict={attack.model.x_input: x2, attack.model.y_input: y_nat})
+                pred, grad = self.get_pred_and_grad(x2, y_nat)
+                adv_not_found = np.minimum(adv_not_found, pred.astype(int))
+                adv[np.logical_not(pred)] = np.copy(x2[np.logical_not(pred)])
+                
+                #grad /= (1e-10 + np.sum(np.abs(grad), axis=(1,2,3), keepdims=True))
+                #x2 = np.add(x2, (np.random.random_sample(grad.shape)-0.5)*1e-12 + self.alpha * grad, casting='unsafe')
 
+                x2 = np.add(x2, self.alpha * np.sign(grad), casting='unsafe')
+            
+            x2 = x_nat + self.project_L0_box(x2 - x_nat, lb, ub)
+            x2 = np.clip(x2, 0, 1)
+            
+        return torch.from_numpy(x2).permute(0, 3, 1, 2)
+
+    def project_L0_box(self, delta, lb, ub):
+        ''' projection of the batch delta to a batch x such that:
+                - each image of the batch x has at most k pixels with non-zero channels
+                - lb <= x <= ub '''
+
+        x = np.copy(delta)
+        
+        # Ensure initial box constraints
+        x = np.clip(x, lb, ub)
+
+        # Compute pixel-wise importance: sum over RGB channels if needed
+        importance = np.sum(np.abs(x), axis=-1)  # Shape: (batch, height, width)
+
+        # Flatten spatial dimensions for sorting
+        importance_flat = importance.reshape(importance.shape[0], -1)
+
+        # Get the indices of the k most important perturbed pixels
+        top_k_indices = np.argsort(-importance_flat, axis=-1)[:, :self.k]  # Sort descending
+
+        # Create mask: Only allow perturbations at the selected top-k pixel locations
+        mask = np.zeros_like(importance_flat, dtype=bool)
+        batch_indices = np.arange(importance_flat.shape[0])[:, None]  # Expand for batch indexing
+        mask[batch_indices, top_k_indices] = True  # Select top-k indices
+
+        # Reshape mask back to image dimensions and expand for RGB channels
+        mask = mask.reshape(importance.shape)[:, :, :, None]  
+
+        # Set perturbation values at selected locations
+        x = np.where(mask, np.sign(delta) * self.epsilon, 0)  # Keep sign, set to max allowed perturbation
+        # Enforce box constraints again
+        x = np.clip(x, lb, ub)
+            
+        #x = np.copy(delta)
+        #p1 = np.sum(x**2, axis=-1)
+        #p2 = np.minimum(np.minimum(ub - x, x - lb), 0)
+        #p2 = np.sum(p2**2, axis=-1)
+        #p3 = np.sort(np.reshape(p1-p2, [p2.shape[0],-1]))[:,-self.k]
+        #x = x*(np.logical_and(lb <= x, x <= ub)) + lb*(lb > x) + ub*(x > ub)
+        #x *= np.expand_dims((p1 - p2) >= p3.reshape([-1, 1, 1]), -1)
+        
+        #x = np.clip(x, a_min=-self.epsilon, a_max=self.epsilon)
+        return x
+
+    def get_pred_and_grad(self, x_nat, y_nat):
+        x = torch.from_numpy(x_nat).permute(0, 3, 1, 2).float()
+        x.requires_grad_()
+        y = torch.from_numpy(y_nat)
+
+        with torch.enable_grad():
+            output = self.model(self.model_trms(x.to(self.device)))
+            loss = self.loss(output, y.to(self.device))
+
+        grad = torch.autograd.grad(loss, x)[0]
+        grad = grad.detach().permute(0, 2, 3, 1).numpy()
+
+        pred = (output.detach().cpu().max(dim=-1)[1] == y).numpy()
+        return pred, grad

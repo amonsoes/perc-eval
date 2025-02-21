@@ -110,7 +110,7 @@ HPFAttack: Locally adjusts perturbations based on frequency components.
 - log_sigma: Sigma for the Gaussian in the LoG
 
 ```bash
-python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --transform pretrained --adversarial True --spatial_adv_type hpf_fgsm --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False --use_sal_mask True --dct_patch_size=8 --diagonal=-4 --log_sigma=3.0
+python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --transform pretrained --adversarial True --spatial_adv_type hpf_fgsm --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False --use_sal_mask True --diagonal=-4
 ```
 
 <br>
@@ -121,7 +121,7 @@ SparseSigmaAttack: Sparse Attack based on L0-norm + sigma-map using PGD as base
 - sparse_attack_kappa: sets bound for the scalars of the stad. deviation
 
 ```bash
-python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type sparsesigmaattack --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False - sparse_attack_kappa 0.04
+python3 run_pretrained.py --dataset nips17 --eps 50 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type sparsesigmaattack --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False --sparse_attack_kappa 0.04
 ```
 
 <br>

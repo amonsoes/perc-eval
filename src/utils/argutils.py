@@ -136,7 +136,8 @@ def adversarial_setup(args, filename):
     if adversarial_opt.adversarial:
         if adversarial_opt.spatial_adv_type not in ['sparsefool',
                                                     'percal',
-                                                    'ppba']:
+                                                    'ppba',
+                                                    'sparsesigmaattack']:
             spatial_attack_params = ArgOrganizer(eps=args.eps)
         else:
             spatial_attack_params = ArgOrganizer()
@@ -210,6 +211,7 @@ def adversarial_setup(args, filename):
             if adversarial_opt.spatial_adv_type in ['sparsesigmaattack']:
                 spatial_attack_params.sparse_attack_kappa = args.sparse_attack_kappa
                 spatial_attack_params.steps = args.steps
+                spatial_attack_params.k = args.k
                 
             if adversarial_opt.spatial_adv_type == 'dctcw':
                 spatial_attack_params.dct_type = args.dct_type

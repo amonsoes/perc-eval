@@ -348,7 +348,7 @@ class SparseAttack(AttackConnection):
                 self.report_target_label(target_label)
             perturbed_x = perturbed_x.cpu()
             # TODO: insert perturbation for FAR
-            self.l2_norm.extend([l2.item() for l2 in self.get_l2(orig_x, perturbed_x, )])
+            self.l2_norm.extend([l2.item() for l2 in self.get_l2(orig_x, perturbed_x)])
             if self.image_metric is not None:
                 mad_r, ssim_r, dists_r = self.image_metric(orig_x, perturbed_x)
                 self.mad_score.extend(mad_r)

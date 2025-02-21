@@ -396,6 +396,8 @@ class Logger:
                 run_name += '_' + self.adversarial_opt.spatial_adv_type + '_' + str(self.adversarial_opt.spatial_attack_params.alpha_c)
             elif self.adversarial_opt.spatial_adv_type in ['ppba',]:
                 run_name += '_' + self.adversarial_opt.spatial_adv_type + '_ppba'
+            elif self.adversarial_opt.spatial_adv_type in ['sparsesigmaattack',]:
+                run_name += '_' + self.adversarial_opt.spatial_adv_type + '_k'
             else:
                 run_name += '_' + self.adversarial_opt.spatial_adv_type + '_' + str(self.adversarial_opt.spatial_attack_params.eps)
         run_name = self.resolve_name_collision(f'{self.report_dir}/{run_name}')
@@ -422,7 +424,8 @@ class Logger:
                 f.write(f'surrogate_model : {self.adversarial_opt.surrogate_model_params.surrogate_model}\n')
                 if self.adversarial_opt.spatial_adv_type not in ['sparsefool',
                                                                  'percal',
-                                                                 'ppba']:
+                                                                 'ppba',
+                                                                 'sparsesigmaattack']:
                     f.write(f'eps : {self.adversarial_opt.spatial_attack_params.eps}\n')
                 if self.adversarial_opt.spatial_adv_type == 'jifgsm':
                     f.write(f'diff jpeg type : {self.adversarial_opt.spatial_attack_params.jifgsm_compr_type}\n')

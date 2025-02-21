@@ -48,6 +48,7 @@ def build_args():
     parser.add_argument('--num_blocks', type=int, default=3, help='set nr of blocks for BSR')
     parser.add_argument('--num_scale', type=int, default=20, help='set nr of scales for BSR')
     parser.add_argument('--decay', type=float, default=0.99, help='set grad info decay for MIFGSM')
+    parser.add_argument('--k', type=int, default=400, help='set nr of pixel to be adjusted by sparse L0+Linf attack')
         
     # optimization-based attacks
     parser.add_argument('--c', type=float, default=1.0, help='tradeoff variable that balances delta minimization with adv loss')
