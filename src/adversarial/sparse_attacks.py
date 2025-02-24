@@ -176,7 +176,7 @@ class SparseSigmaAttack(PGD):
             l2_bound = random.uniform(low, high)
         elif method == 'high':
             l2_bound = high
-        return l2_bound / math.sqrt(k)
+        return math.sqrt((l2_bound**2)/k)
 
 
 
@@ -360,10 +360,6 @@ class SparseSigmaAttack(PGD):
             # Reshape back to original (batch, width, height)
             mask = mask.view(batch_size,c, w, h)
             delta[~mask] = 0
-
-            delta_norm = torch.norm(delta.view(batch_size, -1), p=2, dim=-1, keepdim=True)  # L2 norm per sample
-            scale_factor = self.alpha / delta_norm  # Scale perturbation
-            delta = delta * scale_factor.view(batch_size, 1, 1, 1) 
 
             x2 = x2 + delta
             x2 = torch.clamp(x2, min=0.0, max=1.0)

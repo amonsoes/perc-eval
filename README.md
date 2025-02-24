@@ -56,7 +56,7 @@ If you want to add a run to the adv dataset, use --add_to_adv_dataset=True and s
 
 ### Run Attacks
 
-PGDL2: L2-bound BIM with random start.
+**PGDL2**: L2-bound BIM with random start.
 
 - random_start: If True, starts from random perturbation.
 
@@ -66,7 +66,7 @@ python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --tran
 
 <br>
 
-VMIFGSM: Iterative FGSM that uses variance reduction and momentum.
+**VMIFGSM**: Iterative FGSM that uses variance reduction and momentum.
 
 - N: samples for variance reduction computation.
 
@@ -76,7 +76,7 @@ python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --tran
 
 <br>
 
-RCW: Attack based on adversarial optimization.
+**RCW**: Attack based on adversarial optimization.
 
 - c: trade-off parameter. scales adversarial loss f
 - kappa: confidence of adversarial sample
@@ -90,7 +90,7 @@ python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretr
 <br>
 
 
-PerC-AL: Adv optim. attack that uses an alternating loss and uses the CIEDE2000 distance instead of L2
+**PerC-AL**: Adv optim. attack that uses an alternating loss and uses the CIEDE2000 distance instead of L2
 
 - alpha_l: Scales adversarial loss
 - alpha_c: Scales color loss
@@ -102,7 +102,7 @@ python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretr
 
 <br>
 
-HPFAttack: Locally adjusts perturbations based on frequency components.
+**HPFAttack**: Locally adjusts perturbations based on frequency components.
 
 - use_sal_mask: Combines salient regions with the HPF mask
 - dct_patch_size: Adjusts the window of the DCT/granularity for local frequency computations
@@ -116,18 +116,19 @@ python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --tran
 <br>
 
 
-SparseSigmaAttack: Sparse Attack based on L0-norm + sigma-map using PGD as base
+**SparseAttack**: Sparse Attack based on L0-norm + L_inf using PGD as base
 
 - sparse_attack_kappa: sets bound for the scalars of the stad. deviation
+- k number of pixel to be perturbed
 
 ```bash
-python3 run_pretrained.py --dataset nips17 --eps 50 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type sparsesigmaattack --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False --sparse_attack_kappa 0.04
+python3 run_pretrained.py --dataset nips17 --eps 50 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type sparsesigmaattack --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False --sparse_attack_kappa 1.0 -k 4000
 ```
 
 <br>
 
 
-SGD-UAP: Load SGD-trained UAP trained on ImageNet
+**SGD-UAP**: Load SGD-trained UAP trained on ImageNet
 
 - sparse_attack_kappa: sets bound for the scalars of the stad. deviation
 
@@ -137,7 +138,7 @@ python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --tran
 
 <br>
 
-SGA-UAP: Load SGA-trained UAP trained on ImageNet
+**SGA-UAP**: Load SGA-trained UAP trained on ImageNet
 
 - sparse_attack_kappa: sets bound for the scalars of the stad. deviation
 
@@ -147,7 +148,7 @@ python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --tran
 
 <br>
 
-CGNC: CLIP-Guided Generator of adversarial perturbations
+**CGNC**: CLIP-Guided Generator of adversarial perturbations
 
 - arch: res for Resnet152 generator, inc for InceptionV3 generator
 
@@ -157,7 +158,7 @@ python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --tran
 
 <br>
 
-C-GSP: Hierarchical GAN for Perturbation Generation
+**C-GSP**: Hierarchical GAN for Perturbation Generation
 
 - arch: res for Resnet152 generator, inc for InceptionV3 generator
 
@@ -168,7 +169,7 @@ python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --tran
 <br>
 
 
-DIM: Improved momentum-based gradient projection transferability with diverse inputs
+**DIM**: Improved momentum-based gradient projection transferability with diverse inputs
 
 - resize_rate: resize factor used in input diversity
 - diversity_prob the probability of applying input diversity
@@ -179,7 +180,7 @@ python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --tran
 
 <br>
 
-BSR: Improved momentum-based gradient projection transferability with Block Shuffle Rotate
+**BSR**: Improved momentum-based gradient projection transferability with Block Shuffle Rotate
 
 - num_scale: total amount of scaled versions to end up with (b x c x h x w ---> num_scale*b x c x h x w)
 - num_blocks: number of blocks during scaling
@@ -191,7 +192,7 @@ python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --tran
 <br>
 
 
-Square-Attack: Decision-based black-box attack that perturbs in squares.
+**Square-Attack**: Decision-based black-box attack that perturbs in squares.
 
 - n_queries: amount of queries to the target model
 - n_restarts: restart for a full amount of queries
@@ -203,7 +204,7 @@ python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretr
 
 <br>
 
-PPBA: Sccore-based black-box attack that reduces the search space by restricting it to lower frequencies
+**PPBA**: Sccore-based black-box attack that reduces the search space by restricting it to lower frequencies
 
 - n_queries: amount of queries to the target model
 all other parameters are set by default.
