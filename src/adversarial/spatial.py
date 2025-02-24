@@ -33,6 +33,9 @@ from src.adversarial.cgsp_gener import CGSPAttack
 from src.adversarial.sparse_attacks import SparseSigmaAttack, SparseFool
 from src.adversarial.square import SquareAttack
 
+# for iqa
+from src.adversarial.iqa.frqa import FRQA
+
 class AttackLoader:
     
     def __init__(self, 
@@ -204,7 +207,7 @@ class AttackLoader:
         return model 
 
     def get_l2(self, orig_img, adv_img):
-        distance = (adv_images - images).pow(2).sum(dim=(1,2,3)).sqrt()
+        distance = (adv_img - orig_img).pow(2).sum(dim=(1,2,3)).sqrt()
         return distance
 
 class AttackConnection:
@@ -230,12 +233,14 @@ class AttackConnection:
         self.orig_save_dir = "./data/survey_data/orig"
         if l2_bound != -1:
             self.adv_dataset_path = self.set_up_run_in_adv_dataset(attack_type, l2_bound)
+        
+        self.frqa = FRQA(self.adv_dataset_path)
 
 
         self.l2_norm = []
-        self.mad_score = [0.0]
-        self.ssim_score = [0.0]
-        self.dists_score = [0.0]
+        self.mad_score = []
+        self.ssim_score = []
+        self.dists_score = []
         self.adversarial_samples = None
         self.n = 1
 

@@ -3,7 +3,9 @@ import csv
 
 class FRQA:
 
-    def __init__(self, run_name):
+    def __init__(self, attack_name, run_name=''):
+
+        self.attack_name = attack_name
         # rule based
         self.mad = pyiqa.create_metric('mad')
         self.psnr = pyiqa.create_metric('psnr')
@@ -27,11 +29,13 @@ class FRQA:
         self.topiq_scores = []
         self.pie_app_scores = []
 
-        self.report_file = f'{run_name}/iqa_report.csv'
+        if run_name != '':
+            self.report_file = f'{run_name}/iqa_report.csv'
+            # run_name something like 'data/perc_data/4.0/fgsm/....'
 
-        with open(self.report_file, 'a') as report_file:
-            report_obj = csv.writer(report_file)
-            report_obj.writerow(['l2', 'mad', 'ssim', 'psnr', 'ssim', 'vif', 'dists', 'lpips', 'ahiq', 'topiq_fr', 'pieapp'])
+            with open(self.report_file, 'a') as report_file:
+                report_obj = csv.writer(report_file)
+                report_obj.writerow(['filename', 'l2', 'mad', 'ssim', 'psnr', 'ssim', 'vif', 'dists', 'lpips', 'ahiq', 'topiq_fr', 'pieapp'])
         
     
     def __call__(self, x, x_adv):
@@ -64,6 +68,7 @@ class FRQA:
         self.pie_app_scores.extend(pie_app_score)
 
         self.write_to_report(mad_score, psnr_score, ssim_score, vif_score,dists_score,lpips_score, ahiq_score, topiq_score, pie_app_score)
+        return [mad_score, psnr_score, ssim_score, vif_score,dists_score,lpips_score, ahiq_score, topiq_score, pie_app_score]
 
 
     def write_to_report(self, 
