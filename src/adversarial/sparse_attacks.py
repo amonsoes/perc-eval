@@ -166,7 +166,7 @@ class SparseSigmaAttack(PGD):
         self.random_start=False
         if l2_bound != -1:
             self.epsilon = self.get_eps_in_range(l2_bound, k)
-            self.alpha = self.epsilon / self.steps
+            self.alpha = (self.epsilon / self.steps)
             self.l2_bound = l2_bound
 
 
@@ -332,37 +332,42 @@ class SparseSigmaAttack(PGD):
             (in this case the original image is returned in adv) 
         '''
 
+        batch_size, c, h, w = x_nat.shape
         x2 = x_nat.clone().detach()
             
         adv_not_found = torch.ones_like(y_nat)
         adv = torch.zeros_like(x_nat)
+
+        pred, grad = self.get_pred_and_grad(x2, y_nat)
+
+        importance = grad.abs()
+
+        # Flatten spatial dimensions for sorting
+        importance_flat = importance.view(batch_size,-1)  # Shape: (batch, ch* width * height)
+        values, topk_indices = torch.topk(importance_flat, k=self.k, dim=-1)
+        
+        # Create a zero mask of the same shape
+        mask = torch.zeros_like(importance_flat, dtype=torch.bool)
+
+        # Scatter 1s into the mask at the top-k locations
+        mask.scatter_(dim=-1, index=topk_indices, value=True)
+
+        # Reshape back to original (batch, width, height)
+        important_pixels = mask.view(batch_size,c, w, h)
 
         for i in range(self.steps):
 
             pred, grad = self.get_pred_and_grad(x2, y_nat)
 
             #project to L0+L_inf box
-            batch_size, c, h, w = grad.shape
-            delta = self.alpha*grad.sign()
+            step = self.alpha*grad.sign()
 
-            importance = grad.abs()
+            step[~important_pixels] = 0
 
-            # Flatten spatial dimensions for sorting
-            importance_flat = importance.view(batch_size,-1)  # Shape: (batch, ch* width * height)
-            values, topk_indices = torch.topk(importance_flat, k=self.k, dim=-1)
-            
-            # Create a zero mask of the same shape
-            mask = torch.zeros_like(importance_flat, dtype=torch.bool)
-
-            # Scatter 1s into the mask at the top-k locations
-            mask.scatter_(dim=-1, index=topk_indices, value=True)
-
-            # Reshape back to original (batch, width, height)
-            mask = mask.view(batch_size,c, w, h)
-            delta[~mask] = 0
-
-            x2 = x2 + delta
-            x2 = torch.clamp(x2, min=0.0, max=1.0)
+            x2 = x2 + step
+            delta = x_nat - x2
+            delta = torch.clamp(delta, min=-self.epsilon, max=self.epsilon)
+            x2 = torch.clamp(x_nat + delta, min=0.0, max=1.0)
             
         return x2
 
