@@ -35,23 +35,13 @@ class Training:
     def report(self, x_hat, y, paths):
         if self.data.adversarial_opt.adversarial:
             if self.data.adversarial_opt.attack_compression:
-                #l2_norms = self.data.transforms.transform_val.attack_transform.transforms[1].l2_norm
-                #self.data.transforms.transform_val.attack_transform.transforms[1].l2_norm = []
-                mad_scores = self.data.post_transforms.attack.mad_score
-                ssim_scores = self.data.post_transforms.attack.ssim_score
                 l2_norms = self.data.post_transforms.attack.l2_norm
                 self.data.post_transforms.attack.l2_norm = []
-                self.data.post_transforms.attack.ssim_score = []
-                self.data.post_transforms.attack.mad_score = []
-                self.utils.logger.write_to_report(paths, x_hat, y, mad_scores, ssim_scores, l2_norms)
+                self.utils.logger.write_to_report(paths, x_hat, y, l2_norms)
             else:
-                mad_scores = self.data.post_transforms.attack.mad_score
-                ssim_scores = self.data.post_transforms.attack.ssim_score
                 l2_norms = self.data.post_transforms.attack.l2_norm
                 self.data.post_transforms.attack.l2_norm = []
-                self.data.post_transforms.attack.ssim_score = []
-                self.data.post_transforms.attack.mad_score = []
-                self.utils.logger.write_to_report(paths, x_hat, y, mad_scores, ssim_scores, l2_norms)    
+                self.utils.logger.write_to_report(paths, x_hat, y, l2_norms)    
         else:
             self.utils.logger.write_to_report(paths, x_hat, y)
         return l2_norms
@@ -133,12 +123,11 @@ class CNNTraining(Training):
             if self.data.transforms.adversarial_opt.adversarial:
                 self.data.post_transforms.attack.set_report_dir(self.utils.logger.run_name)
             for x, y, paths in tqdm(self.data.test):
-                x = self.data.post_transforms.transform_val(x, y)
+                x = self.data.post_transforms.transform_val(x, y, paths)
                 x, y = x.to(self.device), y.to(self.device)
                 x_hat = self.model(x)
                 self.utils.metrics(x_hat, y)
                 l2_norms = self.report(x_hat, y, paths)
-                self.data.post_transforms.attack.save_to_adv_dataset(l2_norms, paths)
 
             # compute Acc, Recall, Precision, F1, ....
             result = self.utils.metrics.compute()
@@ -150,7 +139,6 @@ class CNNTraining(Training):
                 adv_dataset_path = ''
             attack_is_tgd = self.data.transforms.adversarial_opt.is_targeted
             self.utils.logger.log_test_results(result, is_targeted=attack_is_tgd, prune_dataset=adds_to_adv_ds, adv_dataset=adv_dataset_path)
-
             if hasattr(self.data.post_transforms, 'attack'):
                 self.utils.logger.log_iqa(self.data.post_transforms.attack)
                 if isinstance(self.data.post_transforms.attack, BlackBoxAttack):

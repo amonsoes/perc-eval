@@ -222,27 +222,33 @@ class AttackConnection:
         self.attack_type = attack_type
         self.hpf_masker = hpf_masker
         self.input_size = input_size
+        self.l2_norm = []
         if kwargs.get('protocol_file') is None:
             protocol_file = ''
         else:
             protocol_file = kwargs['protocol_file']
-        self.image_metric = ImageQualityMetric(['mad', 'ssim', 'dists'], protocol_file)
-        self.save_dir = f"./data/survey_data/{attack_type.split('_')[0]}/vanilla" if len(attack_type.split('_')) == 1 else f"./data/survey_data/{attack_type.split('_')[1]}/hpf"
-        self.check_save_dir_path()
+        #self.image_metric = ImageQualityMetric(['mad', 'ssim', 'dists'], protocol_file)
+        #self.save_dir = f"./data/survey_data/{attack_type.split('_')[0]}/vanilla" if len(attack_type.split('_')) == 1 else f"./data/survey_data/{attack_type.split('_')[1]}/hpf"
+        #self.check_save_dir_path()
 
         self.orig_save_dir = "./data/survey_data/orig"
         if l2_bound != -1:
             self.adv_dataset_path = self.set_up_run_in_adv_dataset(attack_type, l2_bound)
         
-        self.frqa = FRQA(self.adv_dataset_path)
-
-
-        self.l2_norm = []
-        self.mad_score = []
-        self.ssim_score = []
-        self.dists_score = []
+        self.frqa = FRQA(self.attack_type, self.adv_dataset_path)
         self.adversarial_samples = None
         self.n = 1
+    
+    def __call__(self, x, y , paths):
+        x = self.to_tensor(x)
+        orig_x = x.clone().detach()
+        perturbed_x = self.adv_attack(x, y)
+        self.l2_norm.extend(self.get_l2(perturbed_x, x))
+        #self.frqa(perturbed_x, orig_x, paths)
+        paths = self.save_to_adv_dataset(paths, perturbed_x)
+        self.adversarial_samples = perturbed_x
+        self.n += len(x)
+        return perturbed_x
 
     def set_report_dir(self, run_name):
         self.report_dir = run_name
@@ -291,12 +297,12 @@ class AttackConnection:
             os.mkdir(adv_dataset_path_for_attack)
         return adv_dataset_path_for_attack
     
-    def save_to_adv_dataset(self, l2_norms, paths):
-        for path, x_adv, l2 in zip(paths, self.adversarial_samples, l2_norms):
+    def save_to_adv_dataset(self, paths, perturbed_x):
+        for path, x_adv in zip(paths, perturbed_x):
             file_hash = path.split('/')[-1]
             # check if the file hash already exists in the database
             if not any([img.startswith(file_hash) for img in os.listdir(self.adv_dataset_path)]):
-                file_name = file_hash + '_' + str(round(l2, ndigits=2))
+                file_name = file_hash 
                 torchvision.utils.save_image(x_adv, f'{self.adv_dataset_path}/{file_name}.png', format='PNG')
         self.adversarial_samples = None
         
@@ -341,10 +347,8 @@ class SparseAttack(AttackConnection):
             raise ValueError('ADVERSARIAL ATTACK NOT RECOGNIZED FROM TYPE. Change spatial_adv_type in options')
         return attack
 
-    def __call__(self, x, y):
+    def adv_attack(self, x, y):
         with torch.enable_grad():
-            x = self.to_tensor(x)
-            orig_x = x.clone().detach()
             x = x.to(self.device)
             self.model.zero_grad()
             perturbed_x = self.attack(x, y)
@@ -353,16 +357,6 @@ class SparseAttack(AttackConnection):
                 self.report_target_label(target_label)
             perturbed_x = perturbed_x.cpu()
             # TODO: insert perturbation for FAR
-            self.l2_norm.extend([l2.item() for l2 in self.get_l2(orig_x, perturbed_x)])
-            if self.image_metric is not None:
-                mad_r, ssim_r, dists_r = self.image_metric(orig_x, perturbed_x)
-                self.mad_score.extend(mad_r)
-                self.ssim_score.extend(ssim_r)
-                self.dists_score.extend(dists_r)
-            #torchvision.utils.save_image(orig_x, f'{self.orig_save_dir}/{self.n}.png', format='PNG')
-            #torchvision.utils.save_image(perturbed_x, f'{self.save_dir}/{self.n}.png', format='PNG')
-            self.n += len(x)
-            self.adversarial_samples = perturbed_x
         return perturbed_x
         
 
@@ -405,25 +399,14 @@ class UniversalPatchAttack(AttackConnection):
             raise ValueError('ADVERSARIAL ATTACK NOT RECOGNIZED FROM TYPE. Change spatial_adv_type in options')
         return attack
 
-    def __call__(self, x, y):
+    def adv_attack(self, x, y):
         with torch.enable_grad():
-            x = self.to_tensor(x)
-            orig_x = x.clone().detach()
-            x = x.to(self.device)
             self.model.zero_grad()
             perturbed_x = self.attack(x, y)
             if isinstance(perturbed_x, tuple):
                 perturbed_x, target_label = perturbed_x
                 self.report_target_label(target_label)
             perturbed_x = perturbed_x.cpu()
-            self.l2_norm.extend([l2.item() for l2 in self.get_l2(orig_x, perturbed_x, )])
-            if self.image_metric is not None:
-                mad_r, ssim_r, dists_r = self.image_metric(orig_x, perturbed_x)
-                self.mad_score.extend(mad_r)
-                self.ssim_score.extend(ssim_r)
-                self.dists_score.extend(dists_r)
-            self.n += len(x)
-            self.adversarial_samples = perturbed_x
         return perturbed_x
 
 class BlackBoxAttack(AttackConnection):
@@ -478,15 +461,10 @@ class BlackBoxAttack(AttackConnection):
             
         return attack
     
-    def __call__(self, x, target_y):
+    def adv_attack(self, x, target_y):
         orig_x = x
         x = self.to_float(x)
         perturbed_x, num_queries = self.black_box_attack(x, target_y)
-        self.num_queries_lst.extend(num_queries)
-        l2_norms = [l2.item() for l2 in self.get_l2(orig_x, perturbed_x)]
-        self.l2_norm.extend(l2_norms)
-        self.n += len(x)
-        self.adversarial_samples = perturbed_x
         return perturbed_x
     
     def set_up_log(self, path_log_dir):
@@ -524,7 +502,7 @@ class GenerativeAttack(AttackConnection):
         self.dataset_type = dataset_type
         self.attack = self.load_attack(attack_type, *args, **kwargs)
 
-    def __call__(self, x, y):
+    def adv_attack(self, x, y):
         with torch.enable_grad():
             x = self.to_tensor(x)
             orig_x = x.clone().detach()
@@ -535,17 +513,6 @@ class GenerativeAttack(AttackConnection):
                 perturbed_x, target_label = perturbed_x
                 self.report_target_label(target_label)
             perturbed_x = perturbed_x.cpu()
-            # TODO: insert perturbation for FAR
-            self.l2_norm.extend([l2.item() for l2 in self.get_l2(orig_x, perturbed_x, )])
-            if self.image_metric is not None:
-                mad_r, ssim_r, dists_r = self.image_metric(orig_x, perturbed_x)
-                self.mad_score.extend(mad_r)
-                self.ssim_score.extend(ssim_r)
-                self.dists_score.extend(dists_r)
-            #torchvision.utils.save_image(orig_x, f'{self.orig_save_dir}/{self.n}.png', format='PNG')
-            #torchvision.utils.save_image(perturbed_x, f'{self.save_dir}/{self.n}.png', format='PNG')
-            self.n += len(x)
-            self.adversarial_samples = perturbed_x
         return perturbed_x
     
     def load_attack(self, attack_type, *args, **kwargs):
@@ -595,7 +562,7 @@ class WhiteBoxAttack(AttackConnection):
             self.call_fn = self.attack_mc
 
             
-    def __call__(self, x, y):
+    def adv_attack(self, x, y):
         x = self.call_fn(x, y)
         x = torch.clamp(x, min=0.0, max=1.0)
         self.n += len(x)
@@ -603,8 +570,6 @@ class WhiteBoxAttack(AttackConnection):
     
     def attack_rcw(self, x, y):
         with torch.enable_grad():
-            x = self.to_tensor(x)
-            orig_x = x.clone().detach()
             x = x.to(self.device)
             self.model.zero_grad()
             #y = torch.LongTensor([y])
@@ -616,15 +581,6 @@ class WhiteBoxAttack(AttackConnection):
                 perturbed_x, target_label = perturbed_x
                 self.report_target_label(target_label)
             perturbed_x = perturbed_x.cpu()
-            self.l2_norm.extend([l2.item() for l2 in self.get_l2(orig_x, perturbed_x, )])
-            if self.image_metric is not None:
-                mad_r, ssim_r, dists_r = self.image_metric(orig_x, perturbed_x)
-                self.mad_score.extend(mad_r)
-                self.ssim_score.extend(ssim_r)
-                self.dists_score.extend(dists_r)
-            #torchvision.utils.save_image(orig_x, f'{self.orig_save_dir}/{self.n}.png', format='PNG')
-            #torchvision.utils.save_image(perturbed_x, f'{self.save_dir}/{self.n}.png', format='PNG')
-            self.adversarial_samples = perturbed_x
         return perturbed_x
     
     def attack_mc(self, x, y):
@@ -638,23 +594,10 @@ class WhiteBoxAttack(AttackConnection):
                 perturbed_x, target_label = perturbed_x
                 self.report_target_label(target_label)
             perturbed_x = perturbed_x.cpu()
-            # TODO: insert perturbation for FAR
-            self.l2_norm.extend([l2.item() for l2 in self.get_l2(orig_x, perturbed_x, )])
-            if self.image_metric is not None:
-                mad_r, ssim_r, dists_r = self.image_metric(orig_x, perturbed_x)
-                self.mad_score.extend(mad_r)
-                self.ssim_score.extend(ssim_r)
-                self.dists_score.extend(dists_r)
-            #torchvision.utils.save_image(orig_x, f'{self.orig_save_dir}/{self.n}.png', format='PNG')
-            #torchvision.utils.save_image(perturbed_x, f'{self.save_dir}/{self.n}.png', format='PNG')
-            self.adversarial_samples = perturbed_x
         return perturbed_x
 
     def attack_far(self, x, y):
         with torch.enable_grad():
-            x = self.to_tensor(x)
-            orig_x = x.clone().detach()
-            x = x.to(self.device)
             self.model.zero_grad()
             perturbed_x = self.attack(x, y)
             if isinstance(perturbed_x, tuple):
@@ -662,15 +605,6 @@ class WhiteBoxAttack(AttackConnection):
                 self.report_target_label(target_label)
             perturbed_x = perturbed_x.squeeze(0).cpu()
             orig_x = self.attack.to_jpeg(orig_x.detach(), quality=self.internal_compression_rate)
-            self.l2_norm.extend([l2.item() for l2 in self.get_l2(orig_x, perturbed_x)])
-            if self.image_metric is not None:
-                mad_r, ssim_r, dists_r = self.image_metric(orig_x, perturbed_x)
-                self.mad_score.extend(mad_r)
-                self.ssim_score.extend(ssim_r)
-                self.dists_score.extend(dists_r)
-            #torchvision.utils.save_image(orig_x, f'{self.orig_save_dir}/{self.n}.png', format='PNG')
-            #torchvision.utils.save_image(perturbed_x, f'{self.save_dir}/{self.n}.png', format='PNG')
-            self.adversarial_samples = perturbed_x
         return perturbed_x
     
     def load_attack(self, model, attack_type, surrogate_loss, hpf_masker, *args, **kwargs):

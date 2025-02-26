@@ -12,7 +12,7 @@ from src.utils.datautils import YCBCRTransform
 class CustomCompose(T.Compose):
     
     # This class extends the torch Compose class
-    # by having the option of passing the label
+    # by having the option of passing the label and additional info
     # to specific transforms in the list
     
     # accepts a boolean list "target_required" (ie. [0,1,0])
@@ -32,10 +32,10 @@ class CustomCompose(T.Compose):
                 lst[e] = 1
         return lst
                 
-    def __call__(self, img, tar=None):
+    def __call__(self, img, tar=None, paths=None):
         for t, req in zip(self.transforms, self.target_required):
             if req:
-                img = t(img, tar)
+                img = t(img, tar, paths)
             else:
                 img = t(img)
         return img
