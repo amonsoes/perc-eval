@@ -151,7 +151,7 @@ class AttackLoader:
                                     dataset_type=self.dataset_type,
                                     *args, 
                                     **kwargs)
-        elif attack_type in ['sgauap', 'uap']:
+        elif attack_type in ['sga_uap', 'sgd_uap']:
             attack = UniversalPatchAttack(attack_type,
                                     surrogate_model=self.surrogate_model,
                                     device=self.device, 
@@ -223,6 +223,7 @@ class AttackConnection:
         self.hpf_masker = hpf_masker
         self.input_size = input_size
         self.l2_norm = []
+        self.to_tensor = T.ConvertImageDtype(torch.float32)
         if kwargs.get('protocol_file') is None:
             protocol_file = ''
         else:
@@ -248,6 +249,7 @@ class AttackConnection:
         paths = self.save_to_adv_dataset(paths, perturbed_x)
         self.adversarial_samples = perturbed_x
         self.n += len(x)
+        perturbed_x = torch.clamp(perturbed_x, min=0.0, max=1.0)
         return perturbed_x
 
     def set_report_dir(self, run_name):
@@ -335,7 +337,6 @@ class SparseAttack(AttackConnection):
         self.dataset_type = dataset_type
         self.internal_compression_rate = internal_jpeg_quality
         self.attack = self.load_attack(self.model, attack_type, *args, **kwargs)
-        self.to_tensor = T.ConvertImageDtype(torch.float32)
         self.jpeg_compr_obj = jpeg_compr_obj
 
     def load_attack(self, model, attack_type, *args, **kwargs):
@@ -388,12 +389,11 @@ class UniversalPatchAttack(AttackConnection):
         self.dataset_type = dataset_type
         self.internal_compression_rate = internal_jpeg_quality
         self.attack = self.load_attack(self.model, attack_type, surrogate_loss, hpf_masker, *args, **kwargs)
-        self.to_tensor = T.ConvertImageDtype(torch.float32)
 
     def load_attack(self, model, attack_type, surrogate_loss, hpf_masker, *args, **kwargs):
-        if attack_type == 'uap':
+        if attack_type == 'sgd_uap':
             attack = SGDUAP(model, model_trms=self.model_trms, *args, **kwargs)
-        elif attack_type == 'sgauap':
+        elif attack_type == 'sga_uap':
             attack = SGAUAP(model, model_trms=self.model_trms, *args, **kwargs)
         else:
             raise ValueError('ADVERSARIAL ATTACK NOT RECOGNIZED FROM TYPE. Change spatial_adv_type in options')
@@ -496,7 +496,6 @@ class GenerativeAttack(AttackConnection):
         self.model = surrogate_model
         self.device = torch.device(device)
         surrogate_loss = torch.nn.CrossEntropyLoss()
-        self.to_tensor = T.ConvertImageDtype(torch.float32)
         self.model_trms = surrogate_model_trms
         self.input_size = input_size
         self.dataset_type = dataset_type
@@ -552,7 +551,6 @@ class WhiteBoxAttack(AttackConnection):
         self.dataset_type = dataset_type
         self.internal_compression_rate = internal_jpeg_quality
         self.attack = self.load_attack(self.model, attack_type, surrogate_loss, hpf_masker, *args, **kwargs)
-        self.to_tensor = T.ConvertImageDtype(torch.float32)
         self.jpeg_compr_obj = jpeg_compr_obj
         if attack_type == 'rcw':
             self.call_fn = self.attack_rcw
@@ -564,7 +562,6 @@ class WhiteBoxAttack(AttackConnection):
             
     def adv_attack(self, x, y):
         x = self.call_fn(x, y)
-        x = torch.clamp(x, min=0.0, max=1.0)
         self.n += len(x)
         return x
     
