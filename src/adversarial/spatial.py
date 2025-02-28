@@ -216,9 +216,11 @@ class AttackConnection:
                 attack_type, 
                 hpf_masker,
                 input_size,
+                device,
                 l2_bound=-1,
                 *args,
                 **kwargs):
+        self.device = torch.device(device)
         self.attack_type = attack_type
         self.hpf_masker = hpf_masker
         self.input_size = input_size
@@ -236,7 +238,7 @@ class AttackConnection:
         if l2_bound != -1:
             self.adv_dataset_path = self.set_up_run_in_adv_dataset(attack_type, l2_bound)
         
-        self.frqa = FRQA(self.attack_type, self.adv_dataset_path)
+        self.frqa = FRQA(self.attack_type, run_name=self.adv_dataset_path, device=self.device)
         self.adversarial_samples = None
         self.n = 1
     
@@ -327,10 +329,10 @@ class SparseAttack(AttackConnection):
         super().__init__(attack_type, 
                         hpf_masker,
                         input_size,
+                        device,
                         *args, 
                         **kwargs)
         self.model = surrogate_model
-        self.device = torch.device(device)
         surrogate_loss = torch.nn.CrossEntropyLoss()
         self.model_trms = surrogate_model_trms
         self.input_size = input_size
@@ -379,10 +381,10 @@ class UniversalPatchAttack(AttackConnection):
         super().__init__(attack_type, 
                         hpf_masker,
                         input_size,
+                        device,
                         *args, 
                         **kwargs)
         self.model = surrogate_model
-        self.device = torch.device(device)
         surrogate_loss = torch.nn.CrossEntropyLoss()
         self.model_trms = surrogate_model_trms
         self.input_size = input_size
@@ -424,6 +426,7 @@ class BlackBoxAttack(AttackConnection):
         super().__init__(attack_type, 
                         hpf_masker,
                         input_size,
+                        device,
                         *args, 
                         **kwargs)
         self.black_box_attack = self.load_attack(self.attack_type,
@@ -491,10 +494,10 @@ class GenerativeAttack(AttackConnection):
         super().__init__(attack_type, 
                         hpf_masker,
                         input_size,
+                        device,
                         *args, 
                         **kwargs)
         self.model = surrogate_model
-        self.device = torch.device(device)
         surrogate_loss = torch.nn.CrossEntropyLoss()
         self.model_trms = surrogate_model_trms
         self.input_size = input_size
@@ -541,10 +544,10 @@ class WhiteBoxAttack(AttackConnection):
         super().__init__(attack_type, 
                         hpf_masker,
                         input_size,
+                        device,
                         *args, 
                         **kwargs)
         self.model = surrogate_model
-        self.device = torch.device(device)
         surrogate_loss = torch.nn.CrossEntropyLoss()
         self.model_trms = surrogate_model_trms
         self.input_size = input_size

@@ -3,21 +3,23 @@ import csv
 
 class FRQA:
 
-    def __init__(self, attack_name, run_name=''):
+    def __init__(self, attack_name, device, run_name=''):
 
         self.attack_name = attack_name
         # rule based
-        self.mad = pyiqa.create_metric('mad')
-        self.psnr = pyiqa.create_metric('psnr')
-        self.ssim = pyiqa.create_metric('ssim')
-        self.vif = pyiqa.create_metric('vif')
+        self.mad = pyiqa.create_metric('mad', device=device)
+        self.psnr = pyiqa.create_metric('psnr', device=device)
+        self.ssim = pyiqa.create_metric('ssim', device=device)
+        self.vif = pyiqa.create_metric('vif', device=device)
 
         # model based
-        self.dists = pyiqa.create_metric('dists')
-        self.lpips = pyiqa.create_metric('lpips')
-        self.ahiq = pyiqa.create_metric('ahiq')
-        self.topiq = pyiqa.create_metric('topiq_fr')
-        self.pie_app = pyiqa.create_metric('pieapp')
+        self.dists = pyiqa.create_metric('dists', device=device)
+        self.lpips = pyiqa.create_metric('lpips', device=device)
+        self.ahiq = pyiqa.create_metric('ahiq', device=device)
+        self.topiq = pyiqa.create_metric('topiq_fr', device=device)
+        self.pie_app = pyiqa.create_metric('pieapp', device=device)
+
+        self.device = device
 
         self.l2_scores = []
         self.mad_scores = []
