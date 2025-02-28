@@ -140,7 +140,7 @@ class CNNTraining(Training):
             attack_is_tgd = self.data.transforms.adversarial_opt.is_targeted
             self.utils.logger.log_test_results(result, is_targeted=attack_is_tgd, prune_dataset=adds_to_adv_ds, adv_dataset=adv_dataset_path)
             if hasattr(self.data.post_transforms, 'attack'):
-                self.utils.logger.log_iqa(self.data.post_transforms.attack)
+                #self.utils.logger.log_iqa(self.data.post_transforms.attack)
                 if isinstance(self.data.post_transforms.attack, BlackBoxAttack):
                     self.utils.logger.log_black_box_metrics(self.data.post_transforms.attack)
             print('\nTEST COMPLETED. RESULTS:\n')
