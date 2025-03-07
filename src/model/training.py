@@ -138,23 +138,27 @@ class CNNTraining(Training):
 
             # compute Acc, Recall, Precision, F1, ....
             result = self.utils.metrics.compute()
-            # compute ASR and CAD
-            adds_to_adv_ds = self.data.post_transforms.attack.add_to_adv_dataset
-            if adds_to_adv_ds:
-                adv_dataset_path = self.data.post_transforms.attack.adv_dataset_path
-            else:
-                adv_dataset_path = ''
-            attack_is_tgd = self.data.transforms.adversarial_opt.is_targeted
-            self.utils.logger.log_test_results(result, is_targeted=attack_is_tgd, prune_dataset=adds_to_adv_ds, adv_dataset=adv_dataset_path)
+            # compute ASR and CAD if adv attack happened
             if hasattr(self.data.post_transforms, 'attack'):
-                #self.utils.logger.log_iqa(self.data.post_transforms.attack)
-                if isinstance(self.data.post_transforms.attack, BlackBoxAttack):
-                    self.utils.logger.log_black_box_metrics(self.data.post_transforms.attack)
+                self.log_attack_details(result)
             print('\nTEST COMPLETED. RESULTS:\n')
             print(result)
             print('\n\n')
             self.utils.logger.exit()
             return 0.8 #result['MulticlassAccuracy'].item()
+    
+    def log_attack_details(self, result):
+        adds_to_adv_ds = self.data.post_transforms.attack.add_to_adv_dataset
+        if adds_to_adv_ds:
+            adv_dataset_path = self.data.post_transforms.attack.adv_dataset_path
+        else:
+            adv_dataset_path = ''
+        attack_is_tgd = self.data.transforms.adversarial_opt.is_targeted
+        self.utils.logger.log_test_results(result, is_targeted=attack_is_tgd, prune_dataset=adds_to_adv_ds, adv_dataset=adv_dataset_path)
+        #self.utils.logger.log_iqa(self.data.post_transforms.attack)
+        if isinstance(self.data.post_transforms.attack, BlackBoxAttack):
+            self.utils.logger.log_black_box_metrics(self.data.post_transforms.attack)
+
                 
 
 if __name__ == '__main__':
