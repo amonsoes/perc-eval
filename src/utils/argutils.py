@@ -114,6 +114,10 @@ def model_setup(args, filename):
         elif args.adv_pretrained_protocol == 'pgd':
             args.model_name = 'adv-resnet-pgd'
             args.surrogate_model = 'adv-resnet-pgd'
+    
+    if args.model_name == 'deit':
+        # overwrite transform to needed DeiT-specific transform
+        args.transform = 'pretrained_deit'
     return args
 
 def adversarial_setup(args, filename):

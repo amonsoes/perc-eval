@@ -57,6 +57,7 @@ class PostTransforms:
         if transform in ['standard', 
                         'augmented', 
                         'pretrained',
+                        'pretrained_deit',
                         'augmented_pretrained_imgnet', 
                         'band_cooccurrence', 
                         'cross_cooccurrence', 

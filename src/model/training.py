@@ -4,6 +4,7 @@ from torch import nn
 from tqdm import tqdm
 from src.utils.trainutils import TrainUtils, get_optim
 from src.adversarial.spatial import BlackBoxAttack
+from transformers import DeiTForImageClassification
 
 class Training:
     
@@ -124,9 +125,14 @@ class CNNTraining(Training):
                 self.data.post_transforms.attack.set_report_dir(self.utils.logger.run_name)
             for x, y, paths in tqdm(self.data.test):
                 x = self.data.post_transforms.transform_val(x, y, paths)
-                x, y = x.to(self.device), y.to(self.device)
-                x_hat = self.model(x)
-                self.utils.metrics(x_hat, y)
+                if isinstance(self.model, DeiTForImageClassification ):
+                    y = y.to(self.device)
+                    x_hat = self.model(**x.to(self.device))
+                    self.utils.metrics(x_hat.logits, y)
+                else:
+                    x, y = x.to(self.device), y.to(self.device)
+                    x_hat = self.model(**x)
+                    self.utils.metrics(x_hat, y)
                 l2_norms = self.report(x_hat, y, paths)
 
             # compute Acc, Recall, Precision, F1, ....

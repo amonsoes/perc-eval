@@ -2,11 +2,13 @@ import torch
 import numpy as np
 import random
 
+
 from torchvision.io import encode_jpeg, decode_image
 from torchvision import transforms as T
 from src.datasets.data_transforms.cooccurrence import BandCMatrix, CrossCMatrix
 from src.datasets.data_transforms.data_helper import StatTensor
 from src.utils.datautils import YCBCRTransform
+from transformers import DeiTImageProcessor
 
 
 class CustomCompose(T.Compose):
@@ -69,6 +71,19 @@ class SpatialTransforms:
 
             self.transform_val = CustomCompose([T.ConvertImageDtype(torch.float32),
                                         self.normalize], [0,0])
+
+        elif transform == 'pretrained_deit':
+            # IMGNet format without augmentations
+            # resize, center crop and rescale are done by pre transforms
+            deit_processor = DeiTImageProcessor(do_resize=False, do_center_crop=False, do_rescale=False)
+
+            def preprocess_deit(x):
+                return deit_processor.preprocess(x, return_tensors='pt')
+            
+            self.transform_train = T.Compose([preprocess_deit])
+
+            # wrap in custom compose to be able to pass x, y, paths in test loop
+            self.transform_val = CustomCompose([preprocess_deit], [0])
 
         elif transform == 'augmented_pretrained_imgnet':
             # IMGNet format with augmentations

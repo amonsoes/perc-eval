@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 
 from torchvision.models import resnet152, ResNet152_Weights, densenet201, DenseNet201_Weights, inception_v3, Inception_V3_Weights, ResNet50_Weights, resnet50
+from transformers import DeiTForImageClassification
 from src.model.xception import XceptionLoader, XceptionSettings
 
 from src.model.preactresnet import PreActResNet18
@@ -175,10 +176,16 @@ class CNNLoader:
             model_ft = xception_loader.load()
             input_size = 299
 
+        elif model_name == "deit":
+            model_ft = DeiTForImageClassification.from_pretrained("facebook/deit-base-distilled-patch16-224", torch_dtype=torch.float16)
+            input_size = 224
+
         else:
             raise ValueError('wrong model name')
         
-        model_ft.device = device
+        if model_name != 'deit':
+            # argument setter of huggingface model seems not to accept the addition of another argument
+            model_ft.device = device
         model_ft.to(device)
 
         #print(f'\n\nfinished loading.\n{model_ft}')
