@@ -78,7 +78,8 @@ class SpatialTransforms:
             deit_processor = DeiTImageProcessor(do_resize=False, do_center_crop=False, do_rescale=False)
 
             def preprocess_deit(x):
-                return deit_processor.preprocess(x, return_tensors='pt')
+                preprocessed =  deit_processor.preprocess(x, return_tensors='pt')
+                return preprocessed['pixel_values']
             
             self.transform_train = T.Compose([preprocess_deit])
 

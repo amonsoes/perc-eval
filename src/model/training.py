@@ -125,14 +125,11 @@ class CNNTraining(Training):
                 self.data.post_transforms.attack.set_report_dir(self.utils.logger.run_name)
             for x, y, paths in tqdm(self.data.test):
                 x = self.data.post_transforms.transform_val(x, y, paths)
+                x, y = x.to(self.device), y.to(self.device)
+                x_hat = self.model(x)
                 if isinstance(self.model, DeiTForImageClassification ) or isinstance(self.model, DeiTForImageClassificationWithTeacher):
                     # Deit Preprocessing returns list TODO: unpack data type in transfrom
-                    y = y.to(self.device)
-                    x_hat = self.model(**x.to(self.device))
                     x_hat = x_hat.logits
-                else:
-                    x, y = x.to(self.device), y.to(self.device)
-                    x_hat = self.model(**x)
                 self.utils.metrics(x_hat, y)
                 self.report(x_hat, y, paths)
             # compute Acc, Recall, Precision, F1, ....
