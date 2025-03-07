@@ -45,7 +45,7 @@ class Training:
                 self.utils.logger.write_to_report(paths, x_hat, y, l2_norms)    
         else:
             self.utils.logger.write_to_report(paths, x_hat, y)
-        return l2_norms
+        return None
 
 
 class CNNTraining(Training):
@@ -132,9 +132,9 @@ class CNNTraining(Training):
                 else:
                     x, y = x.to(self.device), y.to(self.device)
                     x_hat = self.model(**x)
-                    
+
                 self.utils.metrics(x_hat, y)
-                l2_norms = self.report(x_hat, y, paths)
+                self.report(x_hat, y, paths)
 
             # compute Acc, Recall, Precision, F1, ....
             result = self.utils.metrics.compute()
