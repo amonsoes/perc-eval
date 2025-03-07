@@ -118,6 +118,8 @@ def model_setup(args, filename):
     if args.model_name == 'deit':
         # overwrite transform to needed DeiT-specific transform
         args.transform = 'pretrained_deit'
+    if args.surrogate_model == 'deit':
+        args.surrogate_transform = 'pretrained_deit'
     return args
 
 def adversarial_setup(args, filename):
