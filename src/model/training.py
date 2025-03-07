@@ -126,16 +126,15 @@ class CNNTraining(Training):
             for x, y, paths in tqdm(self.data.test):
                 x = self.data.post_transforms.transform_val(x, y, paths)
                 if isinstance(self.model, DeiTForImageClassification ) or isinstance(self.model, DeiTForImageClassificationWithTeacher):
+                    # Deit Preprocessing returns list TODO: unpack data type in transfrom
                     y = y.to(self.device)
                     x_hat = self.model(**x.to(self.device))
                     x_hat = x_hat.logits
                 else:
                     x, y = x.to(self.device), y.to(self.device)
                     x_hat = self.model(**x)
-
                 self.utils.metrics(x_hat, y)
                 self.report(x_hat, y, paths)
-
             # compute Acc, Recall, Precision, F1, ....
             result = self.utils.metrics.compute()
             # compute ASR and CAD if adv attack happened
@@ -146,7 +145,7 @@ class CNNTraining(Training):
             print('\n\n')
             self.utils.logger.exit()
             return 0.8 #result['MulticlassAccuracy'].item()
-    
+        
     def log_attack_details(self, result):
         adds_to_adv_ds = self.data.post_transforms.attack.add_to_adv_dataset
         if adds_to_adv_ds:
