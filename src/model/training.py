@@ -128,11 +128,12 @@ class CNNTraining(Training):
                 if isinstance(self.model, DeiTForImageClassification ):
                     y = y.to(self.device)
                     x_hat = self.model(**x.to(self.device))
-                    self.utils.metrics(x_hat.logits, y)
+                    x_hat = x_hat.logits
                 else:
                     x, y = x.to(self.device), y.to(self.device)
                     x_hat = self.model(**x)
-                    self.utils.metrics(x_hat, y)
+                    
+                self.utils.metrics(x_hat, y)
                 l2_norms = self.report(x_hat, y, paths)
 
             # compute Acc, Recall, Precision, F1, ....
