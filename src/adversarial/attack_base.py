@@ -118,6 +118,10 @@ class Attack(object):
             low, high = 38.0, 134.0
         return low, high
 
+    def get_l2(self, orig_img, adv_img):
+        distance = (orig_img - adv_img).pow(2).sum(dim=(1,2,3)).sqrt()
+        return distance
+
     def set_target_mode(self, mode):
         if mode == 'least_likely':
             self.set_mode_targeted_least_likely()

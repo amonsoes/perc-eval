@@ -18,15 +18,18 @@ from src.adversarial.robust_cw import RCW
 from src.adversarial.perc_cw import PerC_CW, PerC_AL
 from src.adversarial.cvfgsm import CVFGSM
 from src.adversarial.jpeg_ifgm import JIFGSM
-from src.adversarial.unipgd import PGD, UniPGD
-from src.adversarial.pgd import PGDL2
+from src.adversarial.unipgd import UniPGD
+from src.adversarial.pgd import PGDL2, PGD
 from src.adversarial.ppba import PPBA
 from src.adversarial.bsr import BSR
+from src.adversarial.deepfool import DeepFool
 from src.adversarial.uvmifgsm import UVMIFGSM, VMIFGSM
 from src.adversarial.uap_attack import SGDUAP, SGAUAP
 from src.adversarial.dct_attack import DCTCW
 from src.adversarial.adversarial_rounding import FastAdversarialRounding
 from src.adversarial.fgsm import FGSM, HpfFGSM
+from src.adversarial.bim import BIM
+from src.adversarial.mifgsm import MIFGSM
 from src.adversarial.dim import DIM
 from src.adversarial.cgnc_gener import CGNCAttack
 from src.adversarial.cgsp_gener import CGSPAttack
@@ -78,6 +81,7 @@ class AttackLoader:
             hpf_masker = None
         # load white or black box
         if attack_type in ['fgsm',
+                           'mifgsm',
                            'bim',
                            'jifgsm',
                            'grad_gaussian_bim',
@@ -108,6 +112,7 @@ class AttackLoader:
                            'varrcw',
                            'perccw',
                            'percal',
+                           'deepfool',
                            'ercw',
                            'dctcw',
                            'far',
@@ -633,13 +638,15 @@ class WhiteBoxAttack(AttackConnection):
     
     def load_whitebox(self, model, attack_type, surrogate_loss, hpf_masker, *args, **kwargs):
         if attack_type == 'fgsm':
-            attack = FGSM(model, surrogate_loss, model_trms=self.model_trms, *args, **kwargs)
+            attack = FGSM(model, model_trms=self.model_trms, *args, **kwargs)
         elif attack_type == 'hpf_fgsm':
             attack = HpfFGSM(model, surrogate_loss=surrogate_loss, model_trms=self.model_trms, hpf_masker=hpf_masker, *args, **kwargs)
         elif attack_type == 'ycbcr_hpf_fgsm':
             attack = torchattacks.attacks.fgsm.YcbcrHpfFGSM(model, surrogate_loss=surrogate_loss, model_trms=self.model_trms, hpf_masker=hpf_masker, *args, **kwargs)
         elif attack_type == 'bim':
-            attack = torchattacks.attacks.bim.BIM(model, surrogate_loss, model_trms=self.model_trms, *args, **kwargs)
+            attack = BIM(model, model_trms=self.model_trms, *args, **kwargs)
+        elif attack_type == 'mifgsm':
+            attack = MIFGSM(model, model_trms=self.model_trms, *args, **kwargs)
         elif attack_type == 'dim':
             attack = DIM(model, surrogate_loss, model_trms=self.model_trms, *args, **kwargs)
         elif attack_type == 'jifgsm':
@@ -649,7 +656,7 @@ class WhiteBoxAttack(AttackConnection):
         elif attack_type == 'hpf_bim':
             attack = torchattacks.attacks.bim.HpfBIM(model, surrogate_loss=surrogate_loss, model_trms=self.model_trms, hpf_masker=hpf_masker, *args, **kwargs)
         elif attack_type == 'pgd':
-            attack = PGD(model, surrogate_loss, model_trms=self.model_trms, *args, **kwargs)
+            attack = PGD(model, model_trms=self.model_trms, *args, **kwargs)
         elif attack_type == 'unipgd':
             attack = UniPGD(model, surrogate_loss, model_trms=self.model_trms, *args, **kwargs)
         elif attack_type == 'hpf_pgd':
@@ -684,6 +691,8 @@ class WhiteBoxAttack(AttackConnection):
             attack = DCTCW(model, model_trms=self.model_trms, *args, **kwargs)
         elif attack_type == 'bsr':
             attack = BSR(model, model_trms=self.model_trms, *args, **kwargs)
+        elif attack_type == 'deepfool':
+            attack = DeepFool(model, model_trms=self.model_trms, *args, **kwargs)
         else:
             raise ValueError('ADVERSARIAL ATTACK NOT RECOGNIZED FROM TYPE. Change spatial_adv_type in options')
         return attack

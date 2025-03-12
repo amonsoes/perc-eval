@@ -30,14 +30,16 @@ class PGD(Attack):
 
     """
 
-    def __init__(self, eps=8/255, steps=10, random_start=True, *args, **kwargs):
-        super().__init__("PGD", *args, **kwargs)
+    def __init__(self, model, model_trms, eps=8/255, steps=10, random_start=True, l2_bound=-1, *args, **kwargs):
+        super().__init__("PGD", model, model_trms, *args, **kwargs)
         self.eps = eps
-        self.alpha = eps / steps
         self.steps = steps
         self.random_start = random_start
         self.supported_mode = ["default", "targeted"]
         self.loss = nn.CrossEntropyLoss()
+        if l2_bound != -1:
+            self.eps = self.get_eps_in_range(l2_bound)
+        self.alpha = self.eps / steps
 
     def forward(self, images, labels):
         r"""
@@ -67,9 +69,9 @@ class PGD(Attack):
         return adv_images
 
     def perturb(self, images, grad):
-        adv_images = adv_images.detach() + self.alpha * grad.sign()
+        adv_images = images.detach() + self.alpha * grad.sign()
         delta = torch.clamp(adv_images - images, min=-self.eps, max=self.eps)
-        adv_images = torch.clamp(images + delta, min=0, max=1).detach()
+        adv_images = torch.clamp(images + delta, min=0.0, max=1.0).detach()
         return adv_images
 
     def get_pred_and_grad(self, images, labels):

@@ -38,7 +38,6 @@ class DIM(Attack):
         model,
         surrogate_loss,
         model_trms,
-        alpha,
         eps=8 / 255,
         steps=10,
         decay=0.0,

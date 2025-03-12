@@ -392,6 +392,8 @@ class Logger:
                 run_name += '_' + self.adversarial_opt.spatial_adv_type + '_' + str(self.adversarial_opt.spatial_attack_params.eps)
             elif self.adversarial_opt.spatial_adv_type in ['sparsefool',]:
                 run_name += '_' + self.adversarial_opt.spatial_adv_type + '_' + str(self.adversarial_opt.spatial_attack_params.lam)
+            elif self.adversarial_opt.spatial_adv_type in ['deepfool',]:
+                run_name += '_' + self.adversarial_opt.spatial_adv_type + '_' + str(self.adversarial_opt.spatial_attack_params.overshoot)
             elif self.adversarial_opt.spatial_adv_type in ['percal',]:
                 run_name += '_' + self.adversarial_opt.spatial_adv_type + '_' + str(self.adversarial_opt.spatial_attack_params.alpha_c)
             elif self.adversarial_opt.spatial_adv_type in ['ppba',]:
@@ -423,6 +425,7 @@ class Logger:
                 f.write(f'adversarial_model : {self.adversarial_opt.spatial_adv_type}\n')
                 f.write(f'surrogate_model : {self.adversarial_opt.surrogate_model_params.surrogate_model}\n')
                 if self.adversarial_opt.spatial_adv_type not in ['sparsefool',
+                                                                 'deepfool',
                                                                  'percal',
                                                                  'ppba',
                                                                  'sparsesigmaattack']:

@@ -152,9 +152,12 @@ class ConditionalAverageRate:
         self.acc_dist = 0.0
         self.n = 0
         if eps == None:
-            eps, dim = self.get_epsilon(path)
+            eps, dim, has_eps = self.get_epsilon(path)
         else:
-            _, dim = self.get_epsilon(path)
+            _, dim, has_eps = self.get_epsilon(path)
+        if not has_eps:
+            print('WARNING: no eps used in this attack, therefore scaleing of CAD will be disabled.')
+            scale_for_asp = False
         self.scale_for_asp = scale_for_asp
         delta_eps = torch.full((3, dim, dim), eps)
         self.max_pert_dist = delta_eps.pow(2).sum().sqrt()
@@ -163,11 +166,14 @@ class ConditionalAverageRate:
     
     def get_epsilon(self, path):
         dim = 224 # a std value to avoid chrashing
+        eps=1e-4 # a std value to avoid chrashing
+        has_eps = False
         with open(path + '/' + 'run_params.txt', 'r') as f:
             for line in f.readlines():
                 if line.startswith('eps'):
                     _, value = line.strip().split(':')
                     eps = value
+                    has_eps = True
                 elif line.startswith('surrogate_model'):
                     _, value = line.strip().split(':')
                     if value == 'resnet':
@@ -175,7 +181,7 @@ class ConditionalAverageRate:
                     elif value == 'inception':
                         dim = 299
                 
-        return float(value), dim
+        return float(eps), dim, has_eps
 
     def check_for_compression(self, path):
         used_attack_compression = False

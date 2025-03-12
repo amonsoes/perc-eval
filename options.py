@@ -49,6 +49,7 @@ def build_args():
     parser.add_argument('--num_scale', type=int, default=20, help='set nr of scales for BSR')
     parser.add_argument('--decay', type=float, default=0.99, help='set grad info decay for MIFGSM')
     parser.add_argument('--k', type=int, default=400, help='set nr of pixel to be adjusted by sparse L0+Linf attack')
+    parser.add_argument('--overshoot', type=float, default=0.02, help='set overshoot for deepfool/sparsefool')
         
     # optimization-based attacks
     parser.add_argument('--c', type=float, default=1.0, help='tradeoff variable that balances delta minimization with adv loss')
@@ -68,7 +69,6 @@ def build_args():
     # sparse attacks
     parser.add_argument('--sparse_attack_kappa', type=float, default=0.04, help='set kappa for sparse std-bound sparse attack')
     parser.add_argument('--lam', type=int, default=3, help='perturbation magnitude for sparsefool')
-    parser.add_argument('--overshoot', type=float, default=3, help='set overshoot for sparsefool')
 
     
     # AUC functionality

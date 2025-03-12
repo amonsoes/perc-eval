@@ -97,6 +97,10 @@ class CW(Attack):
         self.low, self.high = self.get_iq_range_from_l2_bound(l2_bound)
         self.low = self.get_l2_from_bounds(l2_bound)
 
+        if self.low == self.high:
+            self.low -= self.low*0.1
+            self.high += self.high*0.1
+
     def get_l2_from_bounds(self, l2_bound, mode='high'):
         low, high = self.get_iq_range_from_l2_bound(l2_bound)
         if mode == 'random':
@@ -208,7 +212,7 @@ class CW(Attack):
                 adv_images = self.tanh_space(w)
 
                 # Calculate image quality loss
-                iq_loss, current_iq_loss = self.get_l2_loss(adv_images, images, attack_mask)
+                iq_loss, current_iq_loss, real_losses = self.get_l2_loss(adv_images, images, attack_mask)
 
                 # Calculate adversarial loss including robustness loss
                 f_loss, comp_outputs = self.get_adversarial_loss(adv_images, labels, target_labels)
@@ -239,6 +243,13 @@ class CW(Attack):
                 mask = mask.view([-1]+[1]*(dim-1))
                 best_adv_images = mask*adv_images.detach() + (1-mask)*best_adv_images
                 # either the current adv_images is the new best_adv_images or the old one depending on mask
+
+
+                if self.l2_bound != 0:
+                    if torch.all(real_losses > self.high):
+                        self.kappa = 0
+                    if torch.all(real_losses >= self.low) and torch.all(real_losses <= self.high) and torch.all(is_adversarial):
+                        break
                 
                 print(f'\n{step} - iq_loss: {iq_loss.item()}, r_loss: {f_loss.sum().item()} cost: {cost.item()}')  
 

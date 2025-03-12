@@ -143,7 +143,8 @@ def adversarial_setup(args, filename):
         if adversarial_opt.spatial_adv_type not in ['sparsefool',
                                                     'percal',
                                                     'ppba',
-                                                    'sparsesigmaattack']:
+                                                    'sparsesigmaattack',
+                                                    'deepfool']:
             spatial_attack_params = ArgOrganizer(eps=args.eps)
         else:
             spatial_attack_params = ArgOrganizer()
@@ -165,7 +166,13 @@ def adversarial_setup(args, filename):
                                                 'bsr',
                                                 'square',
                                                 'ppba',
-                                                'pgdl2']:
+                                                'pgdl2',
+                                                'pgd',
+                                                'fgsm',
+                                                'bim',
+                                                'mifgsm',
+                                                'deepfool',
+                                                'cw']:
             spatial_attack_params.l2_bound = args.l2_bound
         if adversarial_opt.spatial_adv_type in ['square_attack', 'ppba']:
             spatial_attack_params.n_queries = args.n_queries
@@ -248,6 +255,8 @@ def adversarial_setup(args, filename):
             if adversarial_opt.spatial_adv_type in ['grad_gaussian_bim']:
                 spatial_attack_params.gauss_kernel = args.gauss_kernel
                 spatial_attack_params.gauss_sigma = args.gauss_sigma
+            if adversarial_opt.spatial_adv_type in ['deepfool']:
+                spatial_attack_params.overshoot = args.overshoot
             if adversarial_opt.spatial_adv_type in ['varrcw', 'rcw']:    
                 spatial_attack_params.ablation = args.ablation
                 if adversarial_opt.spatial_adv_type == 'varrcw':

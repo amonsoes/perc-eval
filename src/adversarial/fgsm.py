@@ -30,17 +30,19 @@ class FGSM(Attack):
         >>> adv_images = attack(images, labels)
 
     """
-    def __init__(self, model, surrogate_loss, model_trms, eps=8/255, regularization=False, l2_lambda=0.001):
+    def __init__(self, model, model_trms, eps=8/255, regularization=False, l2_lambda=0.001, l2_bound=-1):
         super().__init__("FGSM", model, model_trms)
         self.eps = eps
         self.supported_mode = ['default', 'targeted']
         self.regularization = regularization
         self.l2_lambda = l2_lambda
         self.get_loss_fn = self.get_loss_l2 if regularization == True else self.get_loss_regular
-        self.loss = surrogate_loss
+        self.loss = torch.nn.CrossEntropyLoss()
         self.model_trms = model_trms
         self.avg_salient_mask = torch.zeros((3,224,224))
         self.n = 0
+        if l2_bound != -1:
+            self.eps = self.get_eps_in_range(l2_bound)
 
     def activations_to_avg_mask(self, grads):
         batch_size = grads.shape[0]
