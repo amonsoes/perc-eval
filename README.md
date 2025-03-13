@@ -133,7 +133,7 @@ python3 run_pretrained.py --dataset nips17 --eps 50 --model_name resnet --transf
 - sparse_attack_kappa: sets bound for the scalars of the stad. deviation
 
 ```bash
-python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type sgd-uap --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False
+python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type sgd_uap --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False
 ```
 
 <br>
@@ -143,7 +143,7 @@ python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --tran
 - sparse_attack_kappa: sets bound for the scalars of the stad. deviation
 
 ```bash
-python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type sga-uap --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False
+python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type sga_uap --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False
 ```
 
 <br>

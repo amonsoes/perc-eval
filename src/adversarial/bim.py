@@ -35,9 +35,7 @@ class BIM(Attack):
         self.steps = steps
         self.loss = torch.nn.CrossEntropyLoss()
         self.supported_mode = ["default", "targeted"]
-        if l2_bound != -1:
-            self.eps = self.get_eps_in_range(l2_bound)
-        self.alpha = self.eps / steps
+ß
 
     def forward(self, images, labels):
         r"""

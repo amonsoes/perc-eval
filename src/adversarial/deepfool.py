@@ -22,7 +22,7 @@ class DeepFool(Attack):
         >>> adv_images = attack(images, labels)
     """
 
-    def __init__(self, model, model_trms, steps=2, overshoot=0.02, l2_bound=-1, *args, **kwargs):
+    def __init__(self, model, model_trms, steps=1000, overshoot=0.02, l2_bound=-1, *args, **kwargs):
         super().__init__("DeepFool", model, model_trms, *args, **kwargs)
         self.steps = steps
         self.overshoot = overshoot
@@ -62,8 +62,6 @@ class DeepFool(Attack):
         #while (True in correct) and (curr_steps < self.steps):
         while (True in correct) or torch.any(l2_dists < self.high):
             for idx in range(batch_size):
-                if not correct[idx]:
-                    continue
                 early_stop, pre, adv_image = self._forward_indiv(
                     adv_images[idx], labels[idx]
                 )
@@ -72,8 +70,8 @@ class DeepFool(Attack):
                 if early_stop:
                     correct[idx] = False
             curr_steps += 1
-            #if curr_steps > self.steps:
-            #    break
+            if curr_steps > self.steps:
+                break
             print(f'Current Step: {curr_steps}')
             l2_dists = self.get_l2(images, torch.cat(adv_images).detach())
 
