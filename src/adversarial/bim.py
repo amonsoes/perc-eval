@@ -35,7 +35,7 @@ class BIM(Attack):
         self.steps = steps
         self.loss = torch.nn.CrossEntropyLoss()
         self.supported_mode = ["default", "targeted"]
-ß
+
 
     def forward(self, images, labels):
         r"""
