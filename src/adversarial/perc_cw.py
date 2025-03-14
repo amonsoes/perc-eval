@@ -333,6 +333,7 @@ class PerC_AL(Attack):
         self.alpha_l_init = alpha_l
         self.alpha_c_init = alpha_c
         self.kappa = kappa
+        self.original_kappa = kappa
         self.batch_size = batch_size
         self.loss = nn.CrossEntropyLoss(reduction='sum')
         self.l2_bound = 0 if l2_bound == -1 else l2_bound
@@ -359,6 +360,7 @@ class PerC_AL(Attack):
         torch.Tensor
             Batch of image samples modified to be adversarial
         """
+        self.kappa = self.original_kappa
         inputs = inputs.to(self.device)
         labels = labels.to(self.device)
 
