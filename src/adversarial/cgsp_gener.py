@@ -58,7 +58,7 @@ class CGSPAttack(Attack):
         state_dict = torch.load(pretrained, map_location=self.device)
         netG.load_state_dict(state_dict=state_dict)
         if torch.cuda.is_available():
-            device_ind = int(self.device.split(':')[-1])
+            device_ind = self.device.index
             netG = nn.DataParallel(netG, device_ids = [device_ind, device_ind+1]).to(self.device)
         else:
             netG = nn.DataParallel(netG).to(self.device)
