@@ -18,7 +18,11 @@ import torchvision.transforms as T
 import torch.nn.functional as F
 import os
 import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
 
+from sklearn.decomposition import PCA
 from tqdm import tqdm
 from PIL import Image
 from torch.utils.data import Dataset
@@ -26,8 +30,6 @@ from torchvision.transforms import InterpolationMode
 
 
 from src.datasets.subsets import Nips17Subset
-
-
 
 class Nips17Subset(Dataset):
     
@@ -71,7 +73,9 @@ class Stats:
         self.to_tensor = T.ToTensor()
     
     def process_data(self):
+        pearson_hm = PearsonHeatmap(self.attacks)
         for image, label, filename in tqdm(self.data):
+            pearson_hm.process_data(image, filename)
             self.n += 1
             for attack in self.attacks:
                 id = self.attacks_to_id[attack]
@@ -162,6 +166,116 @@ class Stats:
         #distance = (x - y).pow(2).sum(dim=(1,2,3)).sqrt()
         distance = (x - y).pow(2).sum().sqrt()
         return distance.item()
+    
+
+
+#
+#
+###### graphical analysis code #######
+#
+#
+
+class Visualization:
+
+    def __init__(self, attacks):
+        self.to_tensor = T.ToTensor()
+        self.attacks = attacks
+        self.adv_data_path = './data/perc_eval/4.0'
+
+    def load_adv_sample(self, attack, filename):
+        img_path = f'{self.adv_data_path}/{attack}/{filename}.png'
+        image = Image.open(img_path)
+        image = self.to_tensor(image)
+        return image
+    
+    def get_perturbations(self, filename):
+        perturbations = []
+
+        for attack in self.attacks:
+            perturbation = self.load_adv_sample(attack, filename)
+            perturbations.append(perturbation.flatten().numpy())
+
+        return perturbations
+
+
+class PCAPlot(Visualization):
+
+    def __init__(self, attacks):
+        super().__init__(attacks)
+        self.pca = PCA(n_components=2)
+
+    def process_data(self, image, filename):
+
+        # Convert to numpy array (shape: [num_samples, 150528])
+        X = np.array(self.get_perturbations(filename))
+
+        # Apply PCA to reduce to 2D
+        X_pca = self.pca.fit_transform(X)
+
+        # Scatter plot in 2D
+        plt.figure(figsize=(6,6))
+        plt.scatter(X_pca[:, 0], X_pca[:, 1], alpha=0.7)
+        plt.xlabel("Principal Component 1")
+        plt.ylabel("Principal Component 2")
+        plt.title("PCA Projection of Perturbation Directions")
+        plt.grid()
+        plt.show()
+
+class PearsonHeatmap(Visualization):
+
+    def __init__(self, attacks):
+        super().__init__(attacks)
+        self.attacks_to_id = {attack:e for e,attack in enumerate(attacks)}
+
+    def process_data(self, image, filename):
+        
+        n_attacks = len(self.attacks)
+
+        pearson_matrix = torch.zeros((n_attacks,n_attacks))
+
+        adv_samples = {attack: self.load_adv_sample(attack, filename) for attack in self.attacks}
+
+        for attack, adv_sample in adv_samples.items():
+            attack_id = self.attacks_to_id[attack]
+            pert = adv_sample - image
+            for sub_attack, sub_adv_sample in adv_samples.items():
+                sub_pert = sub_adv_sample - image
+                sub_attack_id = self.attacks_to_id[sub_attack]
+                pearson_result = self.norm_pearson_corr(pert, sub_pert)
+                pearson_matrix[attack_id, sub_attack_id] = pearson_result
+
+        # Plot heatmap of correlations
+        plt.figure(figsize=(8,6))
+        pearson_dataframe = pd.DataFrame(pearson_matrix.numpy(), index=self.attacks, columns=self.attacks)
+        sns.heatmap(pearson_dataframe, cmap="coolwarm", annot=True, linecolor='white', linewidths=0.1)
+        plt.title("Pearson Correlation of Adversarial Perturbations")
+        plt.show()
+
+    def norm_pearson_corr(self, x, y):
+        """
+        Compute the Pearson correlation coefficient between two images.
+        
+        Args:
+            img1, img2: torch.Tensor of shape (C, H, W) or (H, W).
+            
+        Returns:
+            Pearson correlation coefficient (scalar tensor).
+
+        1 -> perfect correlation
+        0.5 -> not correlated
+        0 -> perfect negative correlation
+
+        invert for this computation
+        """
+        x = x.flatten()
+        y = y.flatten()
+        
+        mean1, mean2 = x.mean(), y.mean()
+        std1, std2 = x.std(), y.std()
+        covariance = ((x - mean1) * (y - mean2)).mean()      
+        pearson_corr = covariance / (std1 * std2 + 1e-8)  # Add small epsilon to avoid division by zero
+        return pearson_corr
+
 
 if __name__ == '__main__':
 
@@ -175,6 +289,8 @@ if __name__ == '__main__':
     stats = Stats(data, attacks)
     stats.process_data()
     stats.get_results()
+
+
     print('done')
 
 
