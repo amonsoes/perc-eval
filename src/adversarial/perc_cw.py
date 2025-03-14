@@ -323,7 +323,6 @@ class PerC_AL(Attack):
              #for relatively easy untargeted case, alpha_c_init is adjusted to a smaller value (e.g., 0.1 is used in the paper) 
              alpha_c: float = 0.1,
              kappa: float = 0.,
-             device: torch.device = torch.device('cpu'),
              batch_size: int = 32, 
              l2_bound=-1,
              *args,
@@ -335,7 +334,6 @@ class PerC_AL(Attack):
         self.alpha_c_init = alpha_c
         self.kappa = kappa
         self.batch_size = batch_size
-        self.device = device
         self.loss = nn.CrossEntropyLoss(reduction='sum')
         self.l2_bound = 0 if l2_bound == -1 else l2_bound
         self.low, self.high = self.get_iq_range_from_l2_bound(l2_bound)
@@ -363,7 +361,7 @@ class PerC_AL(Attack):
         """
         inputs = inputs.to(self.device)
         labels = labels.to(self.device)
-        
+
         if self.targeted:
             labels = self.get_target_label(inputs, labels)
 
