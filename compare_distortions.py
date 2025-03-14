@@ -15,14 +15,18 @@ Step 7: Repeat for all of our attacks, make sure you store the avgl2, avg cos, p
 import torch
 import torch.nn as nn
 import torchvision.transforms as T
+import torch.nn.functional as F
 import os
 import pandas as pd
 
 from tqdm import tqdm
 from PIL import Image
 from torch.utils.data import Dataset
+from torchvision.transforms import InterpolationMode
+
 
 from src.datasets.subsets import Nips17Subset
+
 
 
 class Nips17Subset(Dataset):
@@ -34,6 +38,9 @@ class Nips17Subset(Dataset):
         path_images = path_test + 'images/'
         self.labels = pd.read_csv(path_labels)
         self.img_dir = path_images
+        self.transform = T.Compose([T.Resize(256,  interpolation=InterpolationMode.BILINEAR),
+                                    T.CenterCrop(224),
+                                    T.ToTensor()])
 
     def __len__(self):
         return len(self.labels)
@@ -41,6 +48,7 @@ class Nips17Subset(Dataset):
     def __getitem__(self, idx):
         img_path = os.path.join(self.img_dir, self.labels.iloc[idx, 0])
         image = Image.open(img_path + '.png')
+        image = self.transform(image)
         label = self.labels.iloc[idx, 6] - 1
         return image, label, img_path.split('/')[-1]
 
@@ -56,7 +64,7 @@ class Stats:
         self.total_l2 = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
         self.total_cos = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
         self.total_pearson = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
-        self.cos = nn.CosineSimilarity(dim=0, eps=1e-6)
+        self.cos = nn.CosineSimilarity(dim=(1,2,3), eps=1e-6)
         self.attacks = attacks
         self.attacks_to_id = {attack:e for e,attack in enumerate(attacks)}
         self.n = 0
@@ -68,16 +76,18 @@ class Stats:
             for attack in self.attacks:
                 id = self.attacks_to_id[attack]
                 adv_image1 = self.load_adv_sample(attack, filename)
+                pert1 = self.to_unit_length(image - adv_image1)
                 for sub_attack in self.attacks:
                     if sub_attack != attack:
                         # don't compute for identical attacks
                         sub_id = self.attacks_to_id[sub_attack]
                         adv_image2 = self.load_adv_sample(sub_attack, filename)
+                        pert2 = self.to_unit_length(image - adv_image2)
 
                         # compute l2, cos, pearson
-                        cos_result = self.norm_cosine_sim(adv_image1, adv_image2)
-                        l2_result = self.l2(adv_image1, adv_image2)
-                        pearson_result = self.pearson_correlation(adv_image1, adv_image2)
+                        cos_result = self.norm_cosine_sim(pert1, pert2)
+                        l2_result = self.l2(pert1, pert2)
+                        pearson_result = self.norm_pearson_corr(pert1, pert2)
 
                         # fill matrices with result
                         self.total_cos[id, sub_id] += cos_result
@@ -88,6 +98,14 @@ class Stats:
         avg_l2 = self.total_l2 / self.n
         avg_cos = self.total_cos / self.n
         avg_pearson = self.total_pearson / self.n
+        
+        print('Average l2 distances:')
+        print(avg_l2)
+        print('Average Inverted Cosine Similarities:')
+        print(avg_cos)
+        print('Average Inverted Pearson Correlation Coefficient:')
+        print(avg_pearson)
+
         return avg_l2, avg_cos, avg_pearson
 
     def load_adv_sample(self, attack, filename):
@@ -97,8 +115,7 @@ class Stats:
         return image
     
     def to_unit_length(self, x):
-        return x / torch.norm(x)
-
+        return x / x.norm(p=2)
 
     def norm_cosine_sim(self, x, y):
         """
@@ -111,9 +128,11 @@ class Stats:
 
         invert for this computation
         """
-        return 1 - ((1 + self.cos(x,y) ) / 2)
+        x = x.flatten()
+        y = y.flatten()
+        return 1 - ((1 + F.cosine_similarity(x, y, dim=0) ) / 2).item()
     
-    def norm_pearson_correlation(self, x, y):
+    def norm_pearson_corr(self, x, y):
         """
         Compute the Pearson correlation coefficient between two images.
         
@@ -126,6 +145,8 @@ class Stats:
         1 -> perfect correlation
         0.5 -> not correlated
         0 -> perfect negative correlation
+
+        invert for this computation
         """
         x = x.flatten()
         y = y.flatten()
@@ -140,7 +161,7 @@ class Stats:
     def l2(self, x, y):
         #distance = (x - y).pow(2).sum(dim=(1,2,3)).sqrt()
         distance = (x - y).pow(2).sum().sqrt()
-        return distance
+        return distance.item()
 
 if __name__ == '__main__':
 
@@ -153,6 +174,7 @@ if __name__ == '__main__':
 
     stats = Stats(data, attacks)
     stats.process_data()
+    stats.get_results()
     print('done')
 
 

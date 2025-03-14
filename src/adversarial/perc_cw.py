@@ -361,7 +361,9 @@ class PerC_AL(Attack):
         torch.Tensor
             Batch of image samples modified to be adversarial
         """
-
+        inputs = inputs.to(self.device)
+        labels = labels.to(self.device)
+        
         if self.targeted:
             labels = self.get_target_label(inputs, labels)
 
