@@ -57,7 +57,11 @@ class CGSPAttack(Attack):
         netG = ConGeneratorResnet(nz=self.nz, layer=self.layer)
         state_dict = torch.load(pretrained, map_location=self.device)
         netG.load_state_dict(state_dict=state_dict)
-        netG = nn.DataParallel(netG).to(self.device)
+        if torch.cuda.is_available():
+            device_ind = int(self.device.split(':')[-1])
+            netG = nn.DataParallel(netG, device_ids = [device_ind, device_ind+1]).to(self.device)
+        else:
+            netG = nn.DataParallel(netG).to(self.device)
         netG.eval()
         return netG
 
