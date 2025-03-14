@@ -43,7 +43,7 @@ class CGSPAttack(Attack):
         target_tensor = torch.LongTensor(batch_size).to(self.device)
         target_tensor.fill_(target_label)
         
-        target_one_hot = torch.zeros(batch_size, 1000).scatter_(1, target_tensor.unsqueeze(1), 1).to(self.device) # 1000 classes in IgNet
+        target_one_hot = torch.zeros(batch_size, 1000, device=self.device).scatter_(1, target_tensor.unsqueeze(1), 1).to(self.device) # 1000 classes in IgNet
         noise = self.netG(images, target_one_hot, eps=self.eps)
         adv = noise + images
 

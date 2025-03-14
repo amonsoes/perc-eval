@@ -52,7 +52,7 @@ class Stats:
         """
         len_attacks = len(attacks)
         self.data = data
-        self.adv_data_path = './data/perc-eval/8.0'
+        self.adv_data_path = './data/perc_eval/4.0'
         self.total_l2 = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
         self.total_cos = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
         self.total_pearson = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
@@ -69,18 +69,20 @@ class Stats:
                 id = self.attacks_to_id[attack]
                 adv_image1 = self.load_adv_sample(attack, filename)
                 for sub_attack in self.attacks:
-                    sub_id = self.attacks_to_id[sub_attack]
-                    adv_image2 = self.load_adv_sample(sub_attack, filename)
+                    if sub_attack != attack:
+                        # don't compute for identical attacks
+                        sub_id = self.attacks_to_id[sub_attack]
+                        adv_image2 = self.load_adv_sample(sub_attack, filename)
 
-                    # compute l2, cos, pearson
-                    cos_result = self.norm_cosine_sim(adv_image1, adv_image2)
-                    l2_result = self.l2(adv_image1, adv_image2)
-                    pearson_result = self.pearson_correlation(adv_image1, adv_image2)
+                        # compute l2, cos, pearson
+                        cos_result = self.norm_cosine_sim(adv_image1, adv_image2)
+                        l2_result = self.l2(adv_image1, adv_image2)
+                        pearson_result = self.pearson_correlation(adv_image1, adv_image2)
 
-                    # fill matrices with result
-                    self.total_cos[id, sub_id] += cos_result
-                    self.total_l2[id, sub_id] += l2_result
-                    self.total_pearson[id, sub_id] += pearson_result
+                        # fill matrices with result
+                        self.total_cos[id, sub_id] += cos_result
+                        self.total_l2[id, sub_id] += l2_result
+                        self.total_pearson[id, sub_id] += pearson_result
     
     def get_results(self):
         avg_l2 = self.total_l2 / self.n
@@ -89,10 +91,13 @@ class Stats:
         return avg_l2, avg_cos, avg_pearson
 
     def load_adv_sample(self, attack, filename):
-        img_path = f'self.adv_data_path/{attack}/{filename}.png'
+        img_path = f'{self.adv_data_path}/{attack}/{filename}.png'
         image = Image.open(img_path)
         image = self.to_tensor(image)
         return image
+    
+    def to_unit_length(self, x):
+        return x / torch.norm(x)
 
 
     def norm_cosine_sim(self, x, y):
@@ -103,8 +108,10 @@ class Stats:
         1 -> same directionality
         0.5 -> orthoginality
         0 -> negative directionality
+
+        invert for this computation
         """
-        return (1 + self.cos(x,y) ) / 2
+        return 1 - ((1 + self.cos(x,y) ) / 2)
     
     def norm_pearson_correlation(self, x, y):
         """
@@ -128,7 +135,7 @@ class Stats:
         covariance = ((x - mean1) * (y - mean2)).mean()      
         pearson_corr = covariance / (std1 * std2 + 1e-8)  # Add small epsilon to avoid division by zero
         
-        return  (1 + pearson_corr.item()) / 2
+        return  1 - ((1 + pearson_corr.item()) / 2)
 
     def l2(self, x, y):
         #distance = (x - y).pow(2).sum(dim=(1,2,3)).sqrt()
@@ -138,10 +145,12 @@ class Stats:
 if __name__ == '__main__':
 
     data = Nips17Subset()
+    
     attacks=[
-        'pgdl2',
-        'vmifgsm'
+        'dim',
+        'hpf_fgsm'
     ]
+
     stats = Stats(data, attacks)
     stats.process_data()
     print('done')
