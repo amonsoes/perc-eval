@@ -40,6 +40,7 @@ class RCW(CW):
         self.cqe_log = {}
         self.cqe_steps_log = []
         self.n = 0
+        self.original_kappa = self.kappa
         if q_search_type == 'cqe':
             self.q_search_type = self.compression_quality_estimation
             self.cqe_init = self.cqe_init_random if cqe_init == 'random' else self.cqe_init_center
@@ -232,6 +233,7 @@ class RCW(CW):
         #images = images / 255
         
         self.c = self.original_c
+        self.kappa = self.original_kappa
         images = images.clone().detach().to(self.device)
         labels = labels.clone().detach().to(self.device)
         
@@ -330,6 +332,7 @@ class RCW(CW):
                 if self.l2_bound != 0:
                     if torch.all(real_losses > self.high):
                         self.kappa = 0
+                        print('Loss high enough. Setting kappa to 0.')
                     if torch.all(real_losses >= self.low) and torch.all(real_losses <= self.high) and torch.all(is_adversarial):
                         break
 
