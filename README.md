@@ -122,7 +122,7 @@ python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --tran
 - k number of pixel to be perturbed
 
 ```bash
-python3 run_pretrained.py --dataset nips17 --eps 50 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type sparsesigmaattack --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False --sparse_attack_kappa 1.0 -k 4000
+python3 run_pretrained.py --dataset nips17 --eps 50 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type sparsesigmaattack --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False --sparse_attack_kappa 1.0 --k 4000
 ```
 
 <br>

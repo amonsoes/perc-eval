@@ -180,7 +180,7 @@ class SparseSigmaAttack(PGD):
 
 
 
-    def forward_2(self, x_nat, y_nat):
+    """def forward_2(self, x_nat, y_nat):
         ''' PGD attack wrt L0-norm + sigma-map constraints
         
             it returns adversarial examples (if found) adv for the images x_nat, with correct labels y_nat,
@@ -219,7 +219,7 @@ class SparseSigmaAttack(PGD):
             
             x2 = self.project_L0_sigma(x2, self.eps, self.sigma, self.kappa, x_nat)
             
-        return torch.from_numpy(adv).permute(0, 3, 1, 2)
+        return torch.from_numpy(adv).permute(0, 3, 1, 2)"""
 
     def get_pred_and_grad(self, images, labels):
         output, grad =  super().get_pred_and_grad(images, labels)
@@ -276,7 +276,7 @@ class SparseSigmaAttack(PGD):
         return x
     
 
-    def forward(self, x_nat, y_nat):
+    """def forward(self, x_nat, y_nat):
         ''' PGD attack wrt L0-norm + box constraints
         
             it returns adversarial examples (if found) adv for the images x_nat, with correct labels y_nat,
@@ -316,7 +316,7 @@ class SparseSigmaAttack(PGD):
             x2 = x_nat + self.project_L0_box(x2 - x_nat, lb, ub)
             x2 = np.clip(x2, 0, 1)
             
-        return torch.from_numpy(x2).permute(0, 3, 1, 2)
+        return torch.from_numpy(x2).permute(0, 3, 1, 2)"""
 
 
     def forward(self, x_nat, y_nat):
