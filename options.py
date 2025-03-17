@@ -77,7 +77,7 @@ def build_args():
     # optim attacks test environments
     parser.add_argument('--run_cw_test',type=lambda x: x in ['True', 'true', 'TRUE', '1', 'yes', 'y'], default=False, help='activates CW test environment in run_pretrained.py and disables the normal run')
     parser.add_argument('--n_c', type=int, default=20, help='amount of c to be tested during the evaluation')
-    parser.add_argument('--n_starts', type=int, default=2, help='n of random samples around x for optim')
+    parser.add_argument('--n_starts', type=int, default=1, help='n of random samples around x for optim')
     parser.add_argument('--n_datapoints', type=int, default=-1, help='n of samples from data for test. -1 equals to entire dataset size')
     parser.add_argument('--test_robustness',type=lambda x: x in ['True', 'true', 'TRUE', '1', 'yes', 'y'], default=False, help='activates CW test environment with compression')
     parser.add_argument('--verbose_cw', type=lambda x: x in ['True', 'true', 'TRUE', '1', 'yes', 'y'], default=False, help='activate/deactivate print statements in optim')

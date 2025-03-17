@@ -27,6 +27,7 @@ from tqdm import tqdm
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.transforms import InterpolationMode
+from matplotlib.patches import Arc
 
 
 from src.datasets.subsets import Nips17Subset
@@ -74,8 +75,10 @@ class Stats:
     
     def process_data(self):
         pearson_hm = PearsonHeatmap(self.attacks)
+        pca_plot = PCAPlot(self.attacks)
         for image, label, filename in tqdm(self.data):
-            pearson_hm.process_data(image, filename)
+            #pearson_hm.process_data(image, filename)
+            pca_plot.process_data(image, filename)
             self.n += 1
             for attack in self.attacks:
                 id = self.attacks_to_id[attack]
@@ -188,14 +191,19 @@ class Visualization:
         image = self.to_tensor(image)
         return image
     
-    def get_perturbations(self, filename):
+    def get_perturbations(self, image, filename):
         perturbations = []
 
         for attack in self.attacks:
-            perturbation = self.load_adv_sample(attack, filename)
+            adv_image = self.load_adv_sample(attack, filename)
+            perturbation = adv_image - image
+            perturbation = self.to_unit_length(perturbation)
             perturbations.append(perturbation.flatten().numpy())
 
         return perturbations
+    
+    def to_unit_length(self, x):
+        return x / x.norm(p=2)
 
 
 class PCAPlot(Visualization):
@@ -207,19 +215,65 @@ class PCAPlot(Visualization):
     def process_data(self, image, filename):
 
         # Convert to numpy array (shape: [num_samples, 150528])
-        X = np.array(self.get_perturbations(filename))
+        X = np.array(self.get_perturbations(image, filename))
 
         # Apply PCA to reduce to 2D
         X_pca = self.pca.fit_transform(X)
+        X_pca = self.to_unit_length(X_pca)
 
+        self.scatterplot(X_pca)
+        self.arrows(X_pca)
+
+
+
+    def scatterplot(self, X_pca):
         # Scatter plot in 2D
         plt.figure(figsize=(6,6))
         plt.scatter(X_pca[:, 0], X_pca[:, 1], alpha=0.7)
         plt.xlabel("Principal Component 1")
         plt.ylabel("Principal Component 2")
         plt.title("PCA Projection of Perturbation Directions")
+
+        ax = plt.gca()
+        ax.set_facecolor('#eeeeee')
         plt.grid()
         plt.show()
+
+    def get_maximum_cos(self, X_pca):
+        v1, v2 = None, None
+        max_dissim = 1 # cos is in range [1,-1] where -1 means completely dissimilar
+        for pc_pert in X_pca:
+            for pc_sub_pert in X_pca:
+                cos_theta = np.dot(pc_pert, pc_sub_pert) / (np.linalg.norm(pc_pert) * np.linalg.norm(pc_sub_pert))
+                if cos_theta <= max_dissim:
+                    v1 = pc_pert
+                    v2 = pc_sub_pert
+                    max_dissim = cos_theta
+        theta = np.arccos(np.clip(max_dissim, -1.0, 1.0))  # Clip for numerical stability
+        theta_deg = np.degrees(theta)
+        return v1, v2, theta_deg
+
+    def arrows(self, X_pca, plot_cos=True):
+
+        if plot_cos:
+            # plot the biggest angle in X_pca:
+            max_v1, max_v2, theta = self.get_maximum_cos(X_pca)
+        # Quiver plot in 2D
+        plt.figure(figsize=(6,6))
+        plt.quiver(*[[0,0], [0,0]], X_pca[:, 0], X_pca[:, 1], width=0.003, color=['r', 'g'])
+        plt.xlabel("Principal Component 1")
+        plt.ylabel("Principal Component 2")
+        plt.title("PCA Projection of Perturbation Directions")
+
+        ax = plt.gca()
+        ax.set_facecolor('#eeeeee')
+        plt.grid()
+        plt.show()
+
+
+
+    def to_unit_length(self, x):
+        return x / np.linalg.norm(x)
 
 class PearsonHeatmap(Visualization):
 
@@ -237,9 +291,9 @@ class PearsonHeatmap(Visualization):
 
         for attack, adv_sample in adv_samples.items():
             attack_id = self.attacks_to_id[attack]
-            pert = adv_sample - image
+            pert = self.to_unit_length(adv_sample - image)
             for sub_attack, sub_adv_sample in adv_samples.items():
-                sub_pert = sub_adv_sample - image
+                sub_pert = self.to_unit_length(sub_adv_sample - image)
                 sub_attack_id = self.attacks_to_id[sub_attack]
                 pearson_result = self.norm_pearson_corr(pert, sub_pert)
                 pearson_matrix[attack_id, sub_attack_id] = pearson_result

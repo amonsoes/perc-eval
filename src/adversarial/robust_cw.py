@@ -320,13 +320,13 @@ class RCW(CW):
                 has_lower_iq_loss  = best_iq > current_iq_loss.detach()
                 
                 # filter to only change images where both if True
-                mask =  is_adversarial * has_lower_iq_loss
+                mask =  is_adversarial
 
                 best_cost = mask*cost.detach() + (1-mask)*best_cost
                 best_iq = mask*current_iq_loss.detach() + (1-mask)*best_iq
                 
                 mask = mask.view([-1]+[1]*(dim-1))
-                best_adv_images = mask*adv_images.detach() + (1-mask)*best_adv_images
+                
                 # either the current adv_images is the new best_adv_images or the old one depending on mask
 
                 if self.l2_bound != 0:
@@ -335,7 +335,10 @@ class RCW(CW):
                         print('Loss high enough. Setting kappa to 0.')
                     if torch.all(real_losses >= self.low) and torch.all(real_losses <= self.high) and torch.all(is_adversarial):
                         print('L2 constraint success.')
+                        best_adv_images = mask*adv_images.detach() + (1-mask)*best_adv_images
                         break
+                else:
+                    best_adv_images = mask*adv_images.detach() + (1-mask)*best_adv_images
 
 
                 
