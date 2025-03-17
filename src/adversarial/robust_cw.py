@@ -334,6 +334,7 @@ class RCW(CW):
                         self.kappa = 0
                         print('Loss high enough. Setting kappa to 0.')
                     if torch.all(real_losses >= self.low) and torch.all(real_losses <= self.high) and torch.all(is_adversarial):
+                        print('L2 constraint success.')
                         break
 
 
