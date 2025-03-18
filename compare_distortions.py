@@ -202,7 +202,7 @@ class Visualization:
         for attack in attacks:
             adv_image = self.load_adv_sample(attack, filename)
             perturbation = adv_image - image
-            perturbation = self.to_unit_length(perturbation)
+            perturbation = self.pert_to_unit_length(perturbation)
             perturbations.append(perturbation.flatten().numpy())
 
         return perturbations
@@ -326,8 +326,12 @@ class PCAPlot(Visualization):
         plt.show()
 
     def to_unit_length(self, x):
-        norms = np.linalg.norm(x, axis=1, keepdims=True)
-        norms[norms < 1e-10] = 1  
+        if len(x.shape) > 1:
+            norms = np.linalg.norm(x, axis=1, keepdims=True)
+            norms[norms < 1e-10] = 1  
+        else:
+            norms = np.linalg.norm(x, keepdims=True)
+            norms[norms < 1e-10] = 1  
         return x / norms
 
 class PearsonHeatmap(Visualization):
