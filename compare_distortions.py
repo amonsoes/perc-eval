@@ -27,7 +27,7 @@ from tqdm import tqdm
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.transforms import InterpolationMode
-from matplotlib.patches import Arc
+from matplotlib.patches import Arc, Wedge
 
 
 from src.datasets.subsets import Nips17Subset
@@ -171,7 +171,6 @@ class Stats:
         return distance.item()
     
 
-
 #
 #
 ###### graphical analysis code #######
@@ -203,7 +202,9 @@ class Visualization:
         return perturbations
     
     def to_unit_length(self, x):
-        return x / x.norm(p=2)
+        norms = x.norm(p=2)
+        norms[norms < 1e-10] = 1  
+        return x / norms
 
 
 class PCAPlot(Visualization):
@@ -223,8 +224,6 @@ class PCAPlot(Visualization):
 
         self.scatterplot(X_pca)
         self.arrows(X_pca)
-
-
 
     def scatterplot(self, X_pca):
         # Scatter plot in 2D
@@ -257,23 +256,33 @@ class PCAPlot(Visualization):
 
         if plot_cos:
             # plot the biggest angle in X_pca:
-            max_v1, max_v2, theta = self.get_maximum_cos(X_pca)
+            max_v1, max_v2, theta_deg = self.get_maximum_cos(X_pca)
         # Quiver plot in 2D
+        
         plt.figure(figsize=(6,6))
-        plt.quiver(*[[0,0], [0,0]], X_pca[:, 0], X_pca[:, 1], width=0.003, color=['r', 'g'])
+        plt.quiver(*[[0,0], [0,0]], X_pca[:, 0], X_pca[:, 1], width=0.003, color=['r', 'g'], scale=1)
         plt.xlabel("Principal Component 1")
         plt.ylabel("Principal Component 2")
         plt.title("PCA Projection of Perturbation Directions")
 
         ax = plt.gca()
         ax.set_facecolor('#eeeeee')
+        arc_radius = 1.5  # Adjust for visibility
+        arc = Arc((0, 0), 2 * arc_radius, 2 * arc_radius, 
+          angle=0, theta1=0, theta2=theta_deg, color='yellow')
+        wedge = Wedge((0, 0), arc_radius, 0, theta_deg, color='yellow', alpha=0.3)
+
+        ax.add_patch(arc)
+        ax.add_patch(wedge)
         plt.grid()
         plt.show()
 
 
 
     def to_unit_length(self, x):
-        return x / np.linalg.norm(x)
+        norms = np.linalg.norm(x, keepdims=True)
+        norms[norms < 1e-10] = 1  
+        return x / norms
 
 class PearsonHeatmap(Visualization):
 

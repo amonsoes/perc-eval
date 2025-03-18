@@ -164,7 +164,7 @@ def adversarial_setup(args, filename):
                                                 'cgsp',
                                                 'dim',
                                                 'bsr',
-                                                'square',
+                                                'square_attack',
                                                 'ppba',
                                                 'pgdl2',
                                                 'pgd',
