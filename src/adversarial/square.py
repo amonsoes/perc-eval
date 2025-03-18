@@ -421,7 +421,7 @@ class SquareAttack(Attack):
 
         self.init_hyperparam(x)
 
-        adv = x.clone()
+        adv = x.clone().to(self.device)
         if y is None:
             if not self.targeted:
                 with torch.no_grad():
@@ -475,3 +475,6 @@ class SquareAttack(Attack):
                     )
 
         return adv
+
+    def get_logits(self, x):
+        return self.model(self.model_trms(x))
