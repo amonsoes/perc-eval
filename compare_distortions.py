@@ -32,6 +32,9 @@ from matplotlib.patches import Arc, Wedge
 
 from src.datasets.subsets import Nips17Subset
 
+G1_COLOR = 'm' # magenta
+G2_COLOR = 'g' # green
+
 class Nips17Subset(Dataset):
     
     def __init__(self):
@@ -75,10 +78,12 @@ class Stats:
     
     def process_data(self):
         pearson_hm = PearsonHeatmap(self.attacks)
-        pca_plot = PCAPlot(self.attacks)
+        pca_plot = PCAPlot(self.attacks, self.attacks)
+        l2_plot = L2BarChart(self.attacks, self.attacks)
         for image, label, filename in tqdm(self.data):
-            #pearson_hm.process_data(image, filename)
+            pearson_hm.process_data(image, filename)
             pca_plot.process_data(image, filename)
+            l2_plot.process_data(image, filename)
             self.n += 1
             for attack in self.attacks:
                 id = self.attacks_to_id[attack]
@@ -190,10 +195,11 @@ class Visualization:
         image = self.to_tensor(image)
         return image
     
-    def get_perturbations(self, image, filename):
+    def get_perturbations(self, image, filename, attacks):
+
         perturbations = []
 
-        for attack in self.attacks:
+        for attack in attacks:
             adv_image = self.load_adv_sample(attack, filename)
             perturbation = adv_image - image
             perturbation = self.to_unit_length(perturbation)
@@ -201,42 +207,63 @@ class Visualization:
 
         return perturbations
     
-    def to_unit_length(self, x):
-        norms = x.norm(p=2)
-        norms[norms < 1e-10] = 1  
+    def pert_to_unit_length(self, x):
+        norms = x.pow(2).sum().sqrt()
         return x / norms
 
 
 class PCAPlot(Visualization):
 
-    def __init__(self, attacks):
+    def __init__(self, attacks, attacks2=False):
         super().__init__(attacks)
         self.pca = PCA(n_components=2)
+        self.attacks2 = attacks2
 
     def process_data(self, image, filename):
 
-        # Convert to numpy array (shape: [num_samples, 150528])
-        X = np.array(self.get_perturbations(image, filename))
+        if self.attacks2:
 
-        # Apply PCA to reduce to 2D
-        X_pca = self.pca.fit_transform(X)
-        X_pca = self.to_unit_length(X_pca)
+            # Convert to numpy array (shape: [num_samples, 150528])
+            X = np.array(self.get_perturbations(image, filename, self.attacks))
+            # Apply PCA to reduce to 2D
+            X_pca = self.pca.fit_transform(X)
+            X_pca = self.to_unit_length(X_pca)
 
-        self.scatterplot(X_pca)
-        self.arrows(X_pca)
+            # repeat for other attack group
+            Y = np.array(self.get_perturbations(image, filename, self.attacks2))
+            Y_pca = self.pca.fit_transform(Y)
+            Y_pca = self.to_unit_length(Y_pca)
 
-    def scatterplot(self, X_pca):
+            # plot
+            self.scatterplot(X_pca, Y_pca)
+            self.arrows(X_pca)
+            self.arrows(Y_pca)
+        else:
+            # Convert to numpy array (shape: [num_samples, 150528])
+            X = np.array(self.get_perturbations(image, filename, self.attacks))
+            # Apply PCA to reduce to 2D
+            X_pca = self.pca.fit_transform(X)
+            X_pca = self.to_unit_length(X_pca)
+
+            # plot
+            self.scatterplot(X_pca)
+            self.arrows(X_pca)
+
+    def scatterplot(self, X_pca, Y_pca=False):
         # Scatter plot in 2D
         plt.figure(figsize=(6,6))
-        plt.scatter(X_pca[:, 0], X_pca[:, 1], alpha=0.7)
+        plt.scatter(X_pca[:, 0], X_pca[:, 1], alpha=0.7, color=G1_COLOR)
+        if isinstance(Y_pca, np.ndarray):
+            plt.scatter(Y_pca[:, 0], Y_pca[:, 1], alpha=0.7, color=G2_COLOR)
         plt.xlabel("Principal Component 1")
         plt.ylabel("Principal Component 2")
-        plt.title("PCA Projection of Perturbation Directions")
+        plt.title("PCA Projection of Perturbations", weight='bold')
 
         ax = plt.gca()
         ax.set_facecolor('#eeeeee')
-        plt.grid()
+        plt.grid(color='white')
         plt.show()
+
 
     def get_maximum_cos(self, X_pca):
         v1, v2 = None, None
@@ -257,30 +284,49 @@ class PCAPlot(Visualization):
         if plot_cos:
             # plot the biggest angle in X_pca:
             max_v1, max_v2, theta_deg = self.get_maximum_cos(X_pca)
-        # Quiver plot in 2D
+            A = np.array([max_v1, max_v2])
+    
         
+        # Quiver plot in 2D
         plt.figure(figsize=(6,6))
-        plt.quiver(*[[0,0], [0,0]], X_pca[:, 0], X_pca[:, 1], width=0.003, color=['r', 'g'], scale=1)
+        # plt the rest of the vectors
+        plt.quiver([0]*len(X_pca), [0]*len(X_pca), X_pca[:, 0], X_pca[:, 1], width=0.003, scale_units='xy', scale=1)
+        # plt vectors that have biggest cos angle
+        plt.quiver([0]*len(A), [0]*len(A), A[:, 0], A[:, 1], width=0.003, color=[G1_COLOR, G2_COLOR],scale_units='xy', scale=1)
         plt.xlabel("Principal Component 1")
         plt.ylabel("Principal Component 2")
-        plt.title("PCA Projection of Perturbation Directions")
+        plt.title("PCA Projection of Perturbation Directions", weight='bold')
 
         ax = plt.gca()
         ax.set_facecolor('#eeeeee')
-        arc_radius = 1.5  # Adjust for visibility
-        arc = Arc((0, 0), 2 * arc_radius, 2 * arc_radius, 
-          angle=0, theta1=0, theta2=theta_deg, color='yellow')
+
+        limits = X_pca.max()
+        # make angle
+        arc_radius = limits * 0.5  # Adjust for visibility
+        arc = Arc((0, 0), 2 * arc_radius, 2 * arc_radius, angle=0, theta1=0, theta2=theta_deg, color='yellow')
         wedge = Wedge((0, 0), arc_radius, 0, theta_deg, color='yellow', alpha=0.3)
 
+        # Add text label θ
+        # Compute text position (polar to Cartesian)
+        theta_mid = np.radians(theta_deg / 2)  # Midpoint of the angle
+        text_x = arc_radius * 0.7 * np.cos(theta_mid)  # Scale down for better position
+        text_y = arc_radius * 0.7 * np.sin(theta_mid)
+
+        ax.text(text_x, text_y, r'$\theta$', fontsize=14, fontweight='bold')
+
+        # Set equal axis scaling
+        ax.set_xlim(-limits *1.1, limits*1.1)
+        ax.set_ylim(-limits*1.1, limits*1.1)
+        ax.set_aspect('equal')
+
+        # Add grid and legend
         ax.add_patch(arc)
         ax.add_patch(wedge)
-        plt.grid()
+        plt.grid(color='white')
         plt.show()
 
-
-
     def to_unit_length(self, x):
-        norms = np.linalg.norm(x, keepdims=True)
+        norms = np.linalg.norm(x, axis=1, keepdims=True)
         norms[norms < 1e-10] = 1  
         return x / norms
 
@@ -300,9 +346,9 @@ class PearsonHeatmap(Visualization):
 
         for attack, adv_sample in adv_samples.items():
             attack_id = self.attacks_to_id[attack]
-            pert = self.to_unit_length(adv_sample - image)
+            pert = self.pert_to_unit_length(adv_sample - image)
             for sub_attack, sub_adv_sample in adv_samples.items():
-                sub_pert = self.to_unit_length(sub_adv_sample - image)
+                sub_pert = self.pert_to_unit_length(sub_adv_sample - image)
                 sub_attack_id = self.attacks_to_id[sub_attack]
                 pearson_result = self.norm_pearson_corr(pert, sub_pert)
                 pearson_matrix[attack_id, sub_attack_id] = pearson_result
@@ -311,7 +357,7 @@ class PearsonHeatmap(Visualization):
         plt.figure(figsize=(8,6))
         pearson_dataframe = pd.DataFrame(pearson_matrix.numpy(), index=self.attacks, columns=self.attacks)
         sns.heatmap(pearson_dataframe, cmap="coolwarm", annot=True, linecolor='white', linewidths=0.1)
-        plt.title("Pearson Correlation of Adversarial Perturbations")
+        plt.title("Pearson Correlation of Adversarial Perturbations", weight='bold')
         plt.show()
 
     def norm_pearson_corr(self, x, y):
@@ -338,6 +384,68 @@ class PearsonHeatmap(Visualization):
         covariance = ((x - mean1) * (y - mean2)).mean()      
         pearson_corr = covariance / (std1 * std2 + 1e-8)  # Add small epsilon to avoid division by zero
         return pearson_corr
+
+class L2BarChart(Visualization):
+    
+    def __init__(self, attacks, attacks2):
+        super().__init__(attacks)
+        self.attacks2 = attacks2
+        
+    
+    def process_data(self, image, filename):
+        
+        len_attacks_1 = len(self.attacks)
+        len_attacks_2 = len(self.attacks2)
+        l2_mat_1 = torch.zeros((len_attacks_1,len_attacks_1))
+        l2_mat_2 = torch.zeros((len_attacks_2,len_attacks_2))
+
+        perturbations1 = self.get_perturbations(image, filename, self.attacks)
+        perturbations2 = self.get_perturbations(image, filename, self.attacks2)
+
+        for e, pert in enumerate(perturbations1):
+            for k, sub_pert in enumerate(perturbations1):
+                l2_distance = (pert - sub_pert).pow(2).sum().sqrt()
+                l2_mat_1[e, k] = l2_distance
+        avg_l2_1 = l2_mat_1.sum() / (len_attacks_1*len_attacks_1)
+
+
+        for e, pert in enumerate(perturbations2):
+            for k, sub_pert in enumerate(perturbations2):
+                l2_distance = (pert - sub_pert).pow(2).sum().sqrt()
+                l2_mat_2[e, k] = l2_distance
+        avg_l2_2 = l2_mat_2.sum() / (len_attacks_2*len_attacks_2)
+        
+
+        # visualize
+
+        plt.bar(['G1', 'G2'], [avg_l2_1.item(), avg_l2_2.item()], color=[G1_COLOR, G2_COLOR])
+        plt.xlabel("Attack Groups")
+        plt.ylabel("L2")
+        plt.title("Avg L2 of Distortions in a Group", weight='bold')
+
+        ax = plt.gca()
+        ax.set_facecolor('#eeeeee')
+        plt.show()
+        
+
+
+
+
+    def get_perturbations(self, image, filename, attacks):
+
+        perturbations = torch.zeros((len(attacks),*image.shape))
+
+        for e, attack in enumerate(attacks):
+            adv_image = self.load_adv_sample(attack, filename)
+            perturbation = adv_image - image
+            perturbation = self.pert_to_unit_length(perturbation)
+            perturbations[e] = perturbation
+
+        return perturbations
+
+
+
+
 
 
 if __name__ == '__main__':
