@@ -421,6 +421,7 @@ class SquareAttack(Attack):
 
         self.init_hyperparam(x)
 
+        x = x.to(self.device)
         adv = x.clone().to(self.device)
         if y is None:
             if not self.targeted:
