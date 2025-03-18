@@ -473,7 +473,7 @@ class SquareAttack(Attack):
                         "- cum. time: {:.1f} s".format(time.time() - startt),
                     )
 
-        return adv
+        return adv, n_queries
 
     def get_logits(self, x):
         return self.model(self.model_trms(x))

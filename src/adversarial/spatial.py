@@ -479,8 +479,8 @@ class BlackBoxAttack(AttackConnection):
         self.path_log_dir = path_log_dir
     
     def get_attack_metrics(self):
-        avg_num_queries = sum(self.num_queries_lst) / len(self.num_queries_lst)
-        avg_mse = sum(self.mse_list) / len(self.mse_list)
+        avg_num_queries = sum(self.num_queries_lst) / (len(self.num_queries_lst) + 1e-05)
+        avg_mse = sum(self.mse_list) / (len(self.mse_list) + 1e-05)
         return avg_num_queries, avg_mse
 
 class GenerativeAttack(AttackConnection):
