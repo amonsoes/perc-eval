@@ -191,7 +191,7 @@ class SquareAttack(Attack):
                 margin_min, loss_min = self.margin_and_loss(x_best, y)
                 n_queries = torch.ones(x.shape[0]).to(self.device)
                 s_init = int(math.sqrt(self.p_init * n_features / c))
-
+                
                 for i_iter in range(self.n_queries):
                     idx_to_fool = (margin_min > 0.0).nonzero().flatten()
 
@@ -454,7 +454,7 @@ class SquareAttack(Attack):
                 x_to_fool = x[ind_to_fool].clone()
                 y_to_fool = y[ind_to_fool].clone()
 
-                _, adv_curr = self.attack_single_run(x_to_fool, y_to_fool)
+                adv_curr, n_queries = self.attack_single_run(x_to_fool, y_to_fool)
 
                 output_curr = self.get_logits(adv_curr)
                 if not self.targeted:
@@ -464,7 +464,7 @@ class SquareAttack(Attack):
                 ind_curr = (acc_curr == 0).nonzero().squeeze()
 
                 acc[ind_to_fool[ind_curr]] = 0
-                adv[ind_to_fool[ind_curr]] = adv_curr[ind_curr].clone()
+                adv[ind_to_fool] = adv_curr.clone().to(self.device)
                 if self.verbose:
                     print(
                         "restart {} - robust accuracy: {:.2%}".format(
