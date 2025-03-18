@@ -473,7 +473,7 @@ class BlackBoxAttack(AttackConnection):
         orig_x = x
         x = self.to_float(x)
         perturbed_x, num_queries = self.black_box_attack(x, target_y)
-        return perturbed_x
+        return perturbed_x.cpu()
     
     def set_up_log(self, path_log_dir):
         self.path_log_dir = path_log_dir
