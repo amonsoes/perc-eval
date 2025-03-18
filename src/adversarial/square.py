@@ -19,7 +19,6 @@ class SquareAttack(Attack):
                 resc_schedule=True,
                 seed=0,
                 verbose=True,
-                device='cpu',
                 l2_bound=-1,
                 *args, 
                 **kwargs):
@@ -43,7 +42,6 @@ class SquareAttack(Attack):
         self.loss = loss
         self.rescale_schedule = resc_schedule
         self.supported_mode = ["default", "targeted"]
-        self.device = device
 
         if l2_bound != -1:
             self.eps = self.get_eps_in_range(l2_bound)
