@@ -33,7 +33,7 @@ class PPBA(Attack):
         self.mom=mom
         self.order=order
         self.r=r
-        self.max_iter=2000
+        self.max_iter=n_queries
         self.rho=rho
         self.total_queries = []
         self.total_success = []
