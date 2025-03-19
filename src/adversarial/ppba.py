@@ -203,7 +203,7 @@ class PPBA(Attack):
     def cw_loss(self, x, y, N_query, targeted=False):
         N_query += x.shape[0]
         outputs = self.model(self.model_trms(x))
-        one_hot_labels = torch.eye(len(outputs[0]))[y].to(self.device)
+        one_hot_labels = torch.eye(len(outputs[0])).to(self.device)[y]
 
         i, ind_i = torch.max((1 - one_hot_labels) * outputs, dim=1) # max logit that is not the actual label
         j, ind_j = torch.max((one_hot_labels) * outputs, dim=1) # either gt or target logit
