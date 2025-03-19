@@ -28,12 +28,11 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.transforms import InterpolationMode
 from matplotlib.patches import Arc, Wedge
-
-
 from src.datasets.subsets import Nips17Subset
 
 G1_COLOR = 'm' # magenta
 G2_COLOR = 'g' # green
+
 
 class Nips17Subset(Dataset):
     
@@ -58,6 +57,7 @@ class Nips17Subset(Dataset):
         label = self.labels.iloc[idx, 6] - 1
         return image, label, img_path.split('/')[-1]
 
+
 class Stats:
 
     def __init__(self, data, attacks):
@@ -77,7 +77,7 @@ class Stats:
         self.to_tensor = T.ToTensor()
     
     def process_data(self):
-        pearson_hm = PearsonHeatmap(self.attacks)
+        pearson_hm = PearsonHeatmap(self.attacks, self.attacks)
         pca_plot = PCAPlot(self.attacks, self.attacks)
         l2_plot = L2BarChart(self.attacks, self.attacks)
         for image, label, filename in tqdm(self.data):
@@ -252,9 +252,9 @@ class PCAPlot(Visualization):
     def scatterplot(self, X_pca, Y_pca=False):
         # Scatter plot in 2D
         plt.figure(figsize=(6,6))
-        plt.scatter(X_pca[:, 0], X_pca[:, 1], alpha=0.7, color=G1_COLOR)
+        plt.scatter(X_pca[:, 0], X_pca[:, 1], alpha=0.7, color=G1_COLOR, label='Group 1')
         if isinstance(Y_pca, np.ndarray):
-            plt.scatter(Y_pca[:, 0], Y_pca[:, 1], alpha=0.7, color=G2_COLOR)
+            plt.scatter(Y_pca[:, 0], Y_pca[:, 1], alpha=0.7, color=G2_COLOR, label='Group 2')
         plt.xlabel("Principal Component 1")
         plt.ylabel("Principal Component 2")
         plt.title("PCA Projection of Perturbations", weight='bold')
@@ -262,8 +262,8 @@ class PCAPlot(Visualization):
         ax = plt.gca()
         ax.set_facecolor('#eeeeee')
         plt.grid(color='white')
+        plt.legend()
         plt.show()
-
 
     def get_maximum_cos(self, X_pca):
         v1, v2 = None, None
@@ -336,17 +336,49 @@ class PCAPlot(Visualization):
 
 class PearsonHeatmap(Visualization):
 
-    def __init__(self, attacks):
+    def __init__(self, attacks, attacks2=False):
         super().__init__(attacks)
         self.attacks_to_id = {attack:e for e,attack in enumerate(attacks)}
+        self.attacks2 = attacks2
+        if attacks2:
+            self.attacks2_to_id = {attack:e for e,attack in enumerate(attacks2)}
 
     def process_data(self, image, filename):
+
+        if self.attacks2:
+
+            pearson_matrix = self.get_pearson_matrix(image, filename, self.attacks)
+            pearson_matrix2 = self.get_pearson_matrix(image, filename, self.attacks2)
+
+            # Plot heatmap of correlations
+            fig, (ax1, ax2) = plt.subplots(1, 2)
+            pearson_dataframe = pd.DataFrame(pearson_matrix.numpy(), index=self.attacks, columns=self.attacks)
+            pearson_dataframe2 = pd.DataFrame(pearson_matrix2.numpy(), index=self.attacks2, columns=self.attacks2)
+
+            sns.heatmap(pearson_dataframe, cmap="coolwarm", annot=True, linecolor='white', linewidths=0.1, ax=ax1)
+            sns.heatmap(pearson_dataframe2, cmap="coolwarm", annot=True, linecolor='white', linewidths=0.1, ax=ax2)
+
+            ax1.set_title('Group 1')
+            ax2.set_title('Group 2')
+            fig.suptitle("Pearson Correlation of Adversarial Perturbations", weight='bold')
+            plt.show()
         
-        n_attacks = len(self.attacks)
+        else:
+        
+            pearson_matrix = self.get_pearson_matrix(image, filename, self.attacks)
 
+            # Plot heatmap of correlations
+            plt.figure(figsize=(8,6))
+            pearson_dataframe = pd.DataFrame(pearson_matrix.numpy(), index=self.attacks, columns=self.attacks)
+            sns.heatmap(pearson_dataframe, cmap="coolwarm", annot=True, linecolor='white', linewidths=0.1)
+            plt.title("Pearson Correlation of Adversarial Perturbations", weight='bold')
+            plt.show()
+
+    def get_pearson_matrix(self, image, filename, attacks):
+        
+        n_attacks = len(attacks)
         pearson_matrix = torch.zeros((n_attacks,n_attacks))
-
-        adv_samples = {attack: self.load_adv_sample(attack, filename) for attack in self.attacks}
+        adv_samples = {attack: self.load_adv_sample(attack, filename) for attack in attacks}
 
         for attack, adv_sample in adv_samples.items():
             attack_id = self.attacks_to_id[attack]
@@ -357,12 +389,8 @@ class PearsonHeatmap(Visualization):
                 pearson_result = self.norm_pearson_corr(pert, sub_pert)
                 pearson_matrix[attack_id, sub_attack_id] = pearson_result
 
-        # Plot heatmap of correlations
-        plt.figure(figsize=(8,6))
-        pearson_dataframe = pd.DataFrame(pearson_matrix.numpy(), index=self.attacks, columns=self.attacks)
-        sns.heatmap(pearson_dataframe, cmap="coolwarm", annot=True, linecolor='white', linewidths=0.1)
-        plt.title("Pearson Correlation of Adversarial Perturbations", weight='bold')
-        plt.show()
+        return pearson_matrix
+
 
     def norm_pearson_corr(self, x, y):
         """
@@ -388,6 +416,7 @@ class PearsonHeatmap(Visualization):
         covariance = ((x - mean1) * (y - mean2)).mean()      
         pearson_corr = covariance / (std1 * std2 + 1e-8)  # Add small epsilon to avoid division by zero
         return pearson_corr
+    
 
 class L2BarChart(Visualization):
     
@@ -395,7 +424,6 @@ class L2BarChart(Visualization):
         super().__init__(attacks)
         self.attacks2 = attacks2
         
-    
     def process_data(self, image, filename):
         
         len_attacks_1 = len(self.attacks)
@@ -431,10 +459,6 @@ class L2BarChart(Visualization):
         ax.set_facecolor('#eeeeee')
         plt.show()
         
-
-
-
-
     def get_perturbations(self, image, filename, attacks):
 
         perturbations = torch.zeros((len(attacks),*image.shape))
@@ -446,10 +470,6 @@ class L2BarChart(Visualization):
             perturbations[e] = perturbation
 
         return perturbations
-
-
-
-
 
 
 if __name__ == '__main__':

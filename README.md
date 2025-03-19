@@ -217,3 +217,68 @@ CURRENTLY ONLY WORKS WITH batchsize=1
 
 <br>
 
+
+### Attacks by Fezza et al. 19
+
+
+**PGD**: BIM with random start.
+
+- random_start: If True, starts from random perturbation.
+
+```bash
+python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type pgd --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False --random_start True
+```
+
+<br>
+
+**BIM**: Iterative Fast Gradient Sign Method
+
+
+```bash
+python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type bim --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False
+```
+
+<br>
+
+**FGSM**: Fast Gradient Sign Method.
+
+
+```bash
+python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --transform pretrained --adversarial True --spatial_adv_type fgsm --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False
+```
+
+<br>
+
+**MIFGSM**: Iterative Fast Gradient Sign Method with Momentum
+
+- decay: set decay of step memory 
+
+```bash
+python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --transform pretrained --adversarial True --steps 10 --spatial_adv_type pgd --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False --random_start True
+```
+
+<br>
+
+**CW**: Attack based on adversarial optimization.
+
+- c: trade-off parameter. scales adversarial loss f
+- kappa: confidence of adversarial sample
+- attack_lr: set learning rate
+- n_starts: nr of binary steps to find c
+
+```bash
+python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretrained --adversarial True --steps 10000 --spatial_adv_type cw --surrogate_model resnet --surrogate_input_size 224 --batchsize 4 --device cuda:0 --is_targeted True --c 1.0 --attack_lr 0.005 --n_starts 1 --target_mode=most_likely
+```
+
+<br>
+
+**Deepfool**: Geometric Adversarial Attacks
+
+param overshoot is set.
+
+```bash
+python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretrained --adversarial True --steps 10000 --spatial_adv_type deepfool --surrogate_model resnet --surrogate_input_size 224 --batchsize 4 --device cuda:0 --is_targeted False
+```
+
+
+
