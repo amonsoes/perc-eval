@@ -82,6 +82,9 @@ class PPBA(Attack):
         )
 
     def forward(self, x, y):
+        x = x.to(self.device)
+        y = y.to(self.device)
+        
         n_samples = x.shape[0]
         N_query = 0
         z = np.zeros((1, self.low_dim))

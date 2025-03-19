@@ -199,7 +199,7 @@ python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --tran
 - p_init: schedule to decrease the parameter p.  p -> percentage of pixels to be attacked
 
 ```bash
-python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretrained --adversarial True --spatial_adv_type square_attack --surrogate_model resnet --surrogate_input_size 224 --batchsize 4 --device cuda:0 --is_targeted False --n_queries=5000 --p_init=0.8
+python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretrained --adversarial True --spatial_adv_type square_attack --surrogate_model resnet --surrogate_input_size 224 --batchsize 8 --device cuda:3 --is_targeted False --n_queries=5000 --p_init=0.8
 ```
 
 <br>
