@@ -1,4 +1,5 @@
 import csv
+import torch
 
 from tqdm import tqdm
 
@@ -8,6 +9,8 @@ from src.datasets.data import Data
 from src.adversarial.cw_test import CWTestEnvironment
 from src.adversarial.auc_test import AUCTest
 from options import args
+
+torch.set_num_threads(4)
 
 def run_setup(args, model, input_size, n_classes, model_dir_name):
     data = Data(dataset_name=args.dataset,
