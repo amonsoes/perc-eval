@@ -22,10 +22,11 @@ class DeepFool(Attack):
         >>> adv_images = attack(images, labels)
     """
 
-    def __init__(self, model, model_trms, steps=1000, overshoot=2.0, l2_bound=-1, *args, **kwargs):
+    def __init__(self, model, model_trms, steps=1000, overshoot=2.0, l2_bound=-1, kappa=0, *args, **kwargs):
         super().__init__("DeepFool", model, model_trms, *args, **kwargs)
         self.steps = steps
         self.overshoot = overshoot
+        self.kappa = kappa
         self.supported_mode = ["default"]
         self.low, self.high = self.get_iq_range_from_l2_bound(l2_bound)
         self.low = self.get_l2_from_bounds(l2_bound)
@@ -89,6 +90,7 @@ class DeepFool(Attack):
         _, pre = torch.max(fs, dim=0)
         if pre != label:
             is_adv = True
+            return (is_adv, target_label, adv_image)
 
         ws = self._construct_jacobian(fs, image).squeeze()
         image = image.detach()

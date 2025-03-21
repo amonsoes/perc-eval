@@ -257,6 +257,7 @@ def adversarial_setup(args, filename):
                 spatial_attack_params.gauss_sigma = args.gauss_sigma
             if adversarial_opt.spatial_adv_type in ['deepfool']:
                 spatial_attack_params.overshoot = args.overshoot
+                spatial_attack_params.kappa = args.kappa
             if adversarial_opt.spatial_adv_type in ['varrcw', 'rcw']:    
                 spatial_attack_params.ablation = args.ablation
                 if adversarial_opt.spatial_adv_type == 'varrcw':
