@@ -60,7 +60,6 @@ class DeepFool(Attack):
             adv_images.append(image)
         l2_dists = torch.zeros_like(labels)
         for i in range(self.steps):
-            print(f'Current Step: {curr_steps}')
             for idx in range(batch_size):
                 early_stop, pre, adv_image = self._forward_indiv(
                     adv_images[idx], labels[idx]
