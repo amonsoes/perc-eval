@@ -77,15 +77,19 @@ class DeepFool(Attack):
 
         adv_images = torch.cat(adv_images).detach()
         return adv_images, target_labels
+    
+    def get_logits(self, inputs, labels=None, *args, **kwargs):
+        inputs = self.model_trms(inputs)
+        return super().get_logits(inputs, labels, *args, **kwargs)
 
     def _forward_indiv(self, image, label):
         image.requires_grad = True
-        fs = self.get_logits(self.model_trms(image))[0]
+        fs = self.get_logits(image)[0]
         _, pre = torch.max(fs, dim=0)
         if pre != label:
             return (True, pre, image)
 
-        ws = self._construct_jacobian(fs, image)
+        ws = self._construct_jacobian(fs, image).squeeze()
         image = image.detach()
 
         f_0 = fs[label]
@@ -125,3 +129,6 @@ class DeepFool(Attack):
             y_element.backward(retain_graph=(False or idx + 1 < len(y)))
             x_grads.append(x.grad.clone().detach())
         return torch.stack(x_grads).reshape(*y.shape, *x.shape)
+
+    def _construct_jacobian(self, y, x):
+        return torch.autograd.functional.jacobian(self.get_logits, x, create_graph=False).detach()
