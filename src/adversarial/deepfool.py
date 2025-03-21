@@ -59,8 +59,8 @@ class DeepFool(Attack):
             image = images[idx : idx + 1].clone().detach()
             adv_images.append(image)
         l2_dists = torch.zeros_like(labels)
-        #while (True in correct) and (curr_steps < self.steps):
-        while (True in correct) or torch.any(l2_dists < self.high):
+        for i in range(self.steps):
+            print(f'Current Step: {curr_steps}')
             for idx in range(batch_size):
                 early_stop, pre, adv_image = self._forward_indiv(
                     adv_images[idx], labels[idx]
@@ -69,11 +69,11 @@ class DeepFool(Attack):
                 target_labels[idx] = pre
                 if early_stop:
                     correct[idx] = False
-            curr_steps += 1
-            if curr_steps > self.steps:
-                break
-            print(f'Current Step: {curr_steps}')
+            is_adversarial = ~correct
             l2_dists = self.get_l2(images, torch.cat(adv_images).detach())
+            if torch.all(l2_dists >= self.low) and torch.all(l2_dists <= self.high) and all(is_adversarial):
+                print('L2 constraint success.')
+                break
 
         adv_images = torch.cat(adv_images).detach()
         return adv_images, target_labels

@@ -267,7 +267,7 @@ python3 run_pretrained.py --dataset nips17 --eps 0.08 --model_name resnet --tran
 - n_starts: nr of binary steps to find c
 
 ```bash
-python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretrained --adversarial True --steps 10000 --spatial_adv_type cw --surrogate_model resnet --surrogate_input_size 224 --batchsize 4 --device cuda:0 --is_targeted True --c 1.0 --attack_lr 0.005 --n_starts 1 --target_mode=most_likely
+python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretrained --adversarial True --steps 10000 --spatial_adv_type cw --surrogate_model resnet --surrogate_input_size 224 --batchsize 4 --device cuda:0 --is_targeted True --c 1.0 --attack_lr 0.005 --n_starts 1 --target_mode=most_likely --verbose_cw True
 ```
 
 <br>
