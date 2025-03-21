@@ -22,7 +22,7 @@ class DeepFool(Attack):
         >>> adv_images = attack(images, labels)
     """
 
-    def __init__(self, model, model_trms, steps=1000, overshoot=0.02, l2_bound=-1, *args, **kwargs):
+    def __init__(self, model, model_trms, steps=1000, overshoot=8.0, l2_bound=-1, *args, **kwargs):
         super().__init__("DeepFool", model, model_trms, *args, **kwargs)
         self.steps = steps
         self.overshoot = overshoot
@@ -111,9 +111,6 @@ class DeepFool(Attack):
         )
 
         target_label = hat_L if hat_L < label else hat_L + 1
-        # to restore old, comment out delta and uncomment rest of code
-        #target_label=1
-        #delta = torch.randn_like(image)
 
         adv_image = image + (1 + self.overshoot) * delta
         adv_image = torch.clamp(adv_image, min=0, max=1).detach()
