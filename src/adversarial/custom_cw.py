@@ -75,6 +75,7 @@ class CW(Attack):
         self.c_value = c
         self.original_c = c
         self.kappa = kappa
+        self.original_kappa = kappa
         self.steps = steps
         self.lr = attack_lr
         self.supported_mode = ['default', 'targeted']
@@ -159,6 +160,7 @@ class CW(Attack):
         #images = images / 255
         
         self.c = self.original_c
+        self.kappa = self.original_kappa
         images = images.clone().detach().to(self.device)
         labels = labels.clone().detach().to(self.device)
 
@@ -235,23 +237,25 @@ class CW(Attack):
                 has_lower_iq_loss  = best_iq > current_iq_loss.detach()
                 
                 # filter to only change images where both if True
-                mask =  is_adversarial * has_lower_iq_loss
+                mask =  is_adversarial
 
                 best_cost = mask*cost.detach() + (1-mask)*best_cost
                 best_iq = mask*current_iq_loss.detach() + (1-mask)*best_iq
                 
                 mask = mask.view([-1]+[1]*(dim-1))
-                best_adv_images = mask*adv_images.detach() + (1-mask)*best_adv_images
                 # either the current adv_images is the new best_adv_images or the old one depending on mask
-
 
                 if self.l2_bound != 0:
                     if torch.all(real_losses > self.high):
                         self.kappa = 0
+                        print('Loss high enough. Setting kappa to 0.')
                     if torch.all(real_losses >= self.low) and torch.all(real_losses <= self.high) and torch.all(is_adversarial):
+                        print('L2 constraint success.')
+                        best_adv_images = mask*adv_images.detach() + (1-mask)*best_adv_images
                         break
-                
-                print(f'\n{step} - iq_loss: {iq_loss.item()}, r_loss: {f_loss.sum().item()} cost: {cost.item()}')  
+                else:
+                    best_adv_images = mask*adv_images.detach() + (1-mask)*best_adv_images
+                print(f'\n{step} - iq_loss: {real_losses}, r_loss: {f_loss.sum().item()} cost: {cost.item()}')  
 
             # set the best output of run as best adv if (1) an adv was found (2) the cost is lower than the one from the last starts
             # compute any per batch image. igs could only be different if one output was adv during optim

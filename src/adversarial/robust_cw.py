@@ -40,7 +40,6 @@ class RCW(CW):
         self.cqe_log = {}
         self.cqe_steps_log = []
         self.n = 0
-        self.original_kappa = self.kappa
         if q_search_type == 'cqe':
             self.q_search_type = self.compression_quality_estimation
             self.cqe_init = self.cqe_init_random if cqe_init == 'random' else self.cqe_init_center
@@ -48,10 +47,6 @@ class RCW(CW):
             self.q_search_type = self.return_fixed
         else:
             self.q_search_type = self.brute_force_search_for_q
-
-        if self.low == self.high:
-            self.low -= self.low*0.1
-            self.high += self.high*0.1
         
     def compress(self, img, jpeg_quality):
         img = img * 255
