@@ -113,7 +113,7 @@ class DeepFool(Attack):
             / (torch.norm(w_prime[hat_L], p=2) ** 2)
         )
 
-        delta = delta / (delta.pow(2).sum().sqrt())
+        delta = (delta / (delta.pow(2).sum().sqrt())) * self.high
         print(f'delta len:{delta.pow(2).sum().sqrt()}')
         target_label = hat_L if hat_L < label else hat_L + 1
 
