@@ -22,7 +22,7 @@ class DeepFool(Attack):
         >>> adv_images = attack(images, labels)
     """
 
-    def __init__(self, model, model_trms, steps=1000, overshoot=8.0, l2_bound=-1, *args, **kwargs):
+    def __init__(self, model, model_trms, steps=1000, overshoot=2.0, l2_bound=-1, *args, **kwargs):
         super().__init__("DeepFool", model, model_trms, *args, **kwargs)
         self.steps = steps
         self.overshoot = overshoot
@@ -83,11 +83,12 @@ class DeepFool(Attack):
         return super().get_logits(inputs, labels, *args, **kwargs)
 
     def _forward_indiv(self, image, label):
+        is_adv = False
         image.requires_grad = True
         fs = self.get_logits(image)[0]
         _, pre = torch.max(fs, dim=0)
         if pre != label:
-            return (True, pre, image)
+            is_adv = True
 
         ws = self._construct_jacobian(fs, image).squeeze()
         image = image.detach()
@@ -114,7 +115,7 @@ class DeepFool(Attack):
 
         adv_image = image + (1 + self.overshoot) * delta
         adv_image = torch.clamp(adv_image, min=0, max=1).detach()
-        return (False, target_label, adv_image)
+        return (is_adv, target_label, adv_image)
 
     # https://stackoverflow.com/questions/63096122/pytorch-is-it-possible-to-differentiate-a-matrix
     # torch.autograd.functional.jacobian is only for torch >= 1.5.1
