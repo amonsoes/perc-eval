@@ -90,7 +90,7 @@ class DeepFool(Attack):
         _, pre = torch.max(fs, dim=0)
         if pre != label:
             is_adv = True
-            return (is_adv, target_label, adv_image)
+            return (is_adv, pre, adv_image)
 
         ws = self._construct_jacobian(fs, image).squeeze()
         image = image.detach()
@@ -113,6 +113,7 @@ class DeepFool(Attack):
             / (torch.norm(w_prime[hat_L], p=2) ** 2)
         )
 
+        print(f'delta len:{delta.pow(2).sum().sqrt()}')
         target_label = hat_L if hat_L < label else hat_L + 1
 
         adv_image = image + (1 + self.overshoot) * delta
