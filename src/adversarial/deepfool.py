@@ -113,11 +113,11 @@ class DeepFool(Attack):
             / (torch.norm(w_prime[hat_L], p=2) ** 2)
         )
 
-        delta = (delta / (delta.pow(2).sum().sqrt())) * self.high
+        delta = (delta / (delta.pow(2).sum().sqrt()))
         print(f'delta len:{delta.pow(2).sum().sqrt()}')
         target_label = hat_L if hat_L < label else hat_L + 1
 
-        adv_image = image + (1 + self.overshoot) * delta
+        adv_image = image + (self.high * delta)
         adv_image = torch.clamp(adv_image, min=0, max=1).detach()
         return (is_adv, target_label, adv_image)
 
