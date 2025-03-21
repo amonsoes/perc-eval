@@ -29,12 +29,15 @@ class BIM(Attack):
         >>> adv_images = attack(images, labels)
     """
 
-    def __init__(self, model, model_trms, eps=8 / 255, alpha=2 / 255, steps=10, l2_bound=-1, *args, **kwargs):
+    def __init__(self, model, model_trms, eps=8 / 255, steps=10, l2_bound=-1, *args, **kwargs):
         super().__init__("BIM", model, model_trms, *args, **kwargs)
         self.eps = eps
         self.steps = steps
         self.loss = torch.nn.CrossEntropyLoss()
         self.supported_mode = ["default", "targeted"]
+        if l2_bound != -1:
+            self.eps = self.get_eps_in_range(l2_bound)
+        self.alpha = self.eps / steps
 
 
     def forward(self, images, labels):
