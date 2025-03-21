@@ -71,6 +71,7 @@ class DeepFool(Attack):
                     correct[idx] = False
             is_adversarial = ~correct
             l2_dists = self.get_l2(images, torch.cat(adv_images).detach())
+            print(f'Current Step: {i}, l2_dists:{l2_dists}, adversarial:{is_adversarial}')
             if torch.all(l2_dists >= self.low) and torch.all(l2_dists <= self.high) and all(is_adversarial):
                 print('L2 constraint success.')
                 break
