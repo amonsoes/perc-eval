@@ -64,12 +64,12 @@ class PGD(Attack):
         for _ in range(self.steps):
 
             pred, grad = self.get_pred_and_grad(adv_images, labels)
-            adv_images = self.perturb(images, grad)
+            adv_images = self.perturb(adv_images, images, grad)
 
         return adv_images
 
-    def perturb(self, images, grad):
-        adv_images = images.detach() + self.alpha * grad.sign()
+    def perturb(self, adv_images, images, grad):
+        adv_images = adv_images.detach() + self.alpha * grad.sign()
         delta = torch.clamp(adv_images - images, min=-self.eps, max=self.eps)
         adv_images = torch.clamp(images + delta, min=0.0, max=1.0).detach()
         return adv_images
