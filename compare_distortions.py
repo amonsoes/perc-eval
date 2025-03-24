@@ -210,12 +210,30 @@ class Stats:
         print('Overall Average Inverted Pearson Correlation Coefficient:')
         print(avg_pearson_2.mean())
 
+        self.heatmap(avg_l2, avg_l2_2, 'Average L2')
+        self.heatmap(avg_cos, avg_cos_2, 'Average Inverted Normalized Cosine Similarity')
+        self.heatmap(avg_pearson, avg_pearson_2, 'Average Inverted Normalized PCC')
 
-        
 
 
 
         return avg_l2, avg_cos, avg_pearson
+
+    def heatmap(self, matrix1, matrix2, analysis_type):
+
+        fig, (ax1, ax2) = plt.subplots(1, 2)
+        pearson_dataframe = pd.DataFrame(matrix1.numpy(), index=self.attacks, columns=self.attacks)
+        pearson_dataframe2 = pd.DataFrame(matrix2.numpy(), index=self.attacks2, columns=self.attacks2)
+
+        sns.heatmap(pearson_dataframe, cmap="coolwarm", annot=True, linecolor='white', linewidths=0.1, ax=ax1)
+        sns.heatmap(pearson_dataframe2, cmap="coolwarm", annot=True, linecolor='white', linewidths=0.1, ax=ax2)
+
+        ax1.set_title('Group 1')
+        ax2.set_title('Group 2')
+        plt.gcf().subplots_adjust(bottom=0.15)
+        fig.suptitle(f"{analysis_type} of Adversarial Perturbations", weight='bold')
+        plt.show()
+        
 
     def load_adv_sample(self, attack, filename):
         img_path = f'{self.adv_data_path}/{attack}/{filename}.png'
