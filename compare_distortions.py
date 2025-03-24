@@ -21,6 +21,7 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
+import math
 
 from sklearn.decomposition import PCA
 from tqdm import tqdm
@@ -60,23 +61,101 @@ class Nips17Subset(Dataset):
 
 class Stats:
 
-    def __init__(self, data, attacks):
+    def __init__(self, data, attacks, attacks2):
         """
         pass attacks as list with the names corresponding to the naming in the dataset like this ['pgdl2',...,'vmifgsm']
         """
         len_attacks = len(attacks)
+        len_attacks_2 = len(attacks2)
+
         self.data = data
-        self.adv_data_path = './data/perc_eval/4.0'
+        self.adv_data_path = './data/perc_eval_copy/8.0'
+
         self.total_l2 = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
         self.total_cos = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
         self.total_pearson = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
+
+        self.total_l2_2 = torch.zeros((len_attacks_2, len_attacks_2),dtype=torch.float32)
+        self.total_cos_2 = torch.zeros((len_attacks_2, len_attacks_2),dtype=torch.float32)
+        self.total_pearson_2 = torch.zeros((len_attacks_2, len_attacks_2),dtype=torch.float32)
+
         self.cos = nn.CosineSimilarity(dim=(1,2,3), eps=1e-6)
+
         self.attacks = attacks
-        self.attacks_to_id = {attack:e for e,attack in enumerate(attacks)}
+        self.attacks2 = attacks2
+
+        self.attacks_to_id = {attack:e for e, attack in enumerate(attacks)}
+        self.attacks2_to_id = {attack:e for e, attack in enumerate(attacks2)}
+
         self.n = 0
         self.to_tensor = T.ToTensor()
     
     def process_data(self):
+        for image, label, filename in tqdm(self.data):
+            if self.n > 20:
+                break
+            self.process_image_attacks1(filename, image)
+            self.process_image_attacks2(filename, image)
+            self.n += 1
+
+
+    def process_image_attacks1(self, filename, image):
+        for attack in self.attacks:
+            id = self.attacks_to_id[attack]
+            adv_image1 = self.load_adv_sample(attack, filename)
+            pert1_int = image - adv_image1
+            pert1 = self.to_unit_length(pert1_int)
+            for sub_attack in self.attacks:
+                if sub_attack != attack:
+                    # don't compute for identical attacks
+                    sub_id = self.attacks_to_id[sub_attack]
+                    adv_image2 = self.load_adv_sample(sub_attack, filename)
+                    pert2_int = image - adv_image2
+                    pert2 = self.to_unit_length(pert2_int)
+
+                    # compute l2, cos, pearson
+                    cos_result = self.norm_cosine_sim(pert1, pert2)
+                    l2_result = self.l2(pert1, pert2)
+                    pearson_result = self.norm_pearson_corr(pert1, pert2)
+
+                    if math.isnan(cos_result) or math.isnan(l2_result) or math.isnan(pearson_result):
+                        print(f'Anomaly detected: filename:{filename}, attack:{attack}, sub_attack:{sub_attack}')
+
+                    # fill matrices with result
+                    self.total_cos[id, sub_id] += cos_result
+                    self.total_l2[id, sub_id] += l2_result
+                    self.total_pearson[id, sub_id] += pearson_result
+
+    def check_if_original(self, attack, filename):
+        pass
+
+    def process_image_attacks2(self, filename, image):
+        for attack in self.attacks2:
+            id = self.attacks2_to_id[attack]
+            adv_image1 = self.load_adv_sample(attack, filename)
+            pert1 = self.to_unit_length(image - adv_image1)
+            for sub_attack in self.attacks2:
+                if sub_attack != attack:
+                    # don't compute for identical attacks
+                    sub_id = self.attacks2_to_id[sub_attack]
+                    adv_image2 = self.load_adv_sample(sub_attack, filename)
+                    pert2 = self.to_unit_length(image - adv_image2)
+
+                    # compute l2, cos, pearson
+                    cos_result = self.norm_cosine_sim(pert1, pert2)
+                    l2_result = self.l2(pert1, pert2)
+                    pearson_result = self.norm_pearson_corr(pert1, pert2)
+
+                    if math.isnan(cos_result) or math.isnan(l2_result) or math.isnan(pearson_result):
+                        print(f'Anomaly detected: filename:{filename}, attack:{attack}, sub_attack:{sub_attack}')
+
+                    # fill matrices with result
+                    self.total_cos_2[id, sub_id] += cos_result
+                    self.total_l2_2[id, sub_id] += l2_result
+                    self.total_pearson_2[id, sub_id] += pearson_result
+
+    
+    def compare_on_sample(self):
         pearson_hm = PearsonHeatmap(self.attacks, self.attacks)
         pca_plot = PCAPlot(self.attacks, self.attacks)
         l2_plot = L2BarChart(self.attacks, self.attacks)
@@ -85,38 +164,56 @@ class Stats:
             pca_plot.process_data(image, filename)
             l2_plot.process_data(image, filename)
             self.n += 1
-            for attack in self.attacks:
-                id = self.attacks_to_id[attack]
-                adv_image1 = self.load_adv_sample(attack, filename)
-                pert1 = self.to_unit_length(image - adv_image1)
-                for sub_attack in self.attacks:
-                    if sub_attack != attack:
-                        # don't compute for identical attacks
-                        sub_id = self.attacks_to_id[sub_attack]
-                        adv_image2 = self.load_adv_sample(sub_attack, filename)
-                        pert2 = self.to_unit_length(image - adv_image2)
 
-                        # compute l2, cos, pearson
-                        cos_result = self.norm_cosine_sim(pert1, pert2)
-                        l2_result = self.l2(pert1, pert2)
-                        pearson_result = self.norm_pearson_corr(pert1, pert2)
-
-                        # fill matrices with result
-                        self.total_cos[id, sub_id] += cos_result
-                        self.total_l2[id, sub_id] += l2_result
-                        self.total_pearson[id, sub_id] += pearson_result
     
     def get_results(self):
         avg_l2 = self.total_l2 / self.n
         avg_cos = self.total_cos / self.n
         avg_pearson = self.total_pearson / self.n
+
+        avg_l2_2 = self.total_l2_2 / self.n
+        avg_cos_2 = self.total_cos_2 / self.n
+        avg_pearson_2 = self.total_pearson_2 / self.n
         
+        print('\nAttack Group 2:\n')
         print('Average l2 distances:')
         print(avg_l2)
         print('Average Inverted Cosine Similarities:')
         print(avg_cos)
         print('Average Inverted Pearson Correlation Coefficient:')
         print(avg_pearson)
+
+        print('\nAttack Group 2:\n')
+        print('Average l2 distances:')
+        print(avg_l2_2)
+        print('Average Inverted Cosine Similarities:')
+        print(avg_cos_2)
+        print('Average Inverted Pearson Correlation Coefficient:')
+        print(avg_pearson_2)
+
+        # average overall-results
+
+
+        print('\nAttack Group 1:\n')
+        print('Overall Average l2 distances:')
+        print(avg_l2.mean())
+        print('Overall Average Inverted Cosine Similarities:')
+        print(avg_cos.mean())
+        print('Overall Average Inverted Pearson Correlation Coefficient:')
+        print(avg_pearson.mean())
+
+        print('\nAttack Group 2:\n')
+        print('Overall Average l2 distances:')
+        print(avg_l2_2.mean())
+        print('Overall Average Inverted Cosine Similarities:')
+        print(avg_cos_2.mean())
+        print('Overall Average Inverted Pearson Correlation Coefficient:')
+        print(avg_pearson_2.mean())
+
+
+        
+
+
 
         return avg_l2, avg_cos, avg_pearson
 
@@ -127,7 +224,7 @@ class Stats:
         return image
     
     def to_unit_length(self, x):
-        return x / x.norm(p=2)
+        return x / (x.norm(p=2) + 1e-10)
 
     def norm_cosine_sim(self, x, y):
         """
@@ -187,7 +284,7 @@ class Visualization:
     def __init__(self, attacks):
         self.to_tensor = T.ToTensor()
         self.attacks = attacks
-        self.adv_data_path = './data/perc_eval/4.0'
+        self.adv_data_path = './data/perc_eval_copy/8.0'
 
     def load_adv_sample(self, attack, filename):
         img_path = f'{self.adv_data_path}/{attack}/{filename}.png'
@@ -209,7 +306,7 @@ class Visualization:
     
     def pert_to_unit_length(self, x):
         norms = x.pow(2).sum().sqrt()
-        return x / norms
+        return x / (norms + 1e-10)
 
 
 class PCAPlot(Visualization):
@@ -332,7 +429,7 @@ class PCAPlot(Visualization):
         else:
             norms = np.linalg.norm(x, keepdims=True)
             norms[norms < 1e-10] = 1  
-        return x / norms
+        return x / (norms + 1e-10)
 
 class PearsonHeatmap(Visualization):
 
@@ -477,11 +574,32 @@ if __name__ == '__main__':
     data = Nips17Subset()
     
     attacks=[
+        'pgdl2',
+        'vmifgsm',
+        'hpf_fgsm',
+        'sparsesigmaattack',
+        'rcw',
+        'percal',
+        'sgd_uap',
+        'sga_uap',
         'dim',
-        'hpf_fgsm'
+        'bsr',
+        'cgnc',
+        'cgsp',
+        'square_attack',
+        'ppba'
     ]
 
-    stats = Stats(data, attacks)
+    attacks2=[
+        'fgsm',
+        'pgd',
+        'bim',
+        'mifgsm',
+        'cw',
+        'deepfool'
+    ]
+
+    stats = Stats(data, attacks, attacks2)
     stats.process_data()
     stats.get_results()
 
