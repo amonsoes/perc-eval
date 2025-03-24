@@ -21,7 +21,7 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-import math
+import ot
 
 from sklearn.decomposition import PCA
 from tqdm import tqdm
@@ -92,8 +92,6 @@ class Stats:
     
     def process_data(self):
         for image, label, filename in tqdm(self.data):
-            if self.n > 20:
-                break
             self.process_image_attacks1(filename, image)
             self.process_image_attacks2(filename, image)
             self.n += 1
@@ -117,9 +115,6 @@ class Stats:
                     cos_result = self.norm_cosine_sim(pert1, pert2)
                     l2_result = self.l2(pert1, pert2)
                     pearson_result = self.norm_pearson_corr(pert1, pert2)
-
-                    if math.isnan(cos_result) or math.isnan(l2_result) or math.isnan(pearson_result):
-                        print(f'Anomaly detected: filename:{filename}, attack:{attack}, sub_attack:{sub_attack}')
 
                     # fill matrices with result
                     self.total_cos[id, sub_id] += cos_result
@@ -145,9 +140,6 @@ class Stats:
                     cos_result = self.norm_cosine_sim(pert1, pert2)
                     l2_result = self.l2(pert1, pert2)
                     pearson_result = self.norm_pearson_corr(pert1, pert2)
-
-                    if math.isnan(cos_result) or math.isnan(l2_result) or math.isnan(pearson_result):
-                        print(f'Anomaly detected: filename:{filename}, attack:{attack}, sub_attack:{sub_attack}')
 
                     # fill matrices with result
                     self.total_cos_2[id, sub_id] += cos_result
@@ -289,6 +281,28 @@ class Stats:
         #distance = (x - y).pow(2).sum(dim=(1,2,3)).sqrt()
         distance = (x - y).pow(2).sum().sqrt()
         return distance.item()
+
+
+    def wasserstein_distance_sinkhorn(self, img1, img2, epsilon=0.01, niter=50):
+        """
+        Computes the Sinkhorn approximation of the Wasserstein distance between two images.
+        img1, img2: PyTorch tensors or NumPy arrays of shape (H, W) or (C, H, W).
+        epsilon: Entropic regularization (higher = smoother, lower = closer to true Wasserstein).
+        niter: Number of Sinkhorn iterations.
+        """
+        # Flatten images to 2D (pixels as samples)
+        img1, img2 = img1.reshape(-1), img2.reshape(-1)
+
+        # Create uniform weights (assuming equal mass)
+        a, b = np.ones(len(img1)) / len(img1), np.ones(len(img2)) / len(img2)
+
+        # Compute the cost matrix (L2 distance between pixel values)
+        M = np.abs(np.subtract.outer(img1, img2)) ** 2  # Squared Euclidean
+
+        # Compute Sinkhorn distance
+        wasserstein_dist = ot.sinkhorn2(a, b, M, reg=epsilon, numItermax=niter)
+        
+        return np.sqrt(wasserstein_dist)  # Square root to get the proper metric form
     
 
 #
