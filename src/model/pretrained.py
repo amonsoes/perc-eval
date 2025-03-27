@@ -11,6 +11,28 @@ from src.model.xception import XceptionLoader, XceptionSettings
 from src.model.preactresnet import PreActResNet18
 from src.model.madry_resnet import madry_resnet50
 
+class DeiT(DeiTForImageClassificationWithTeacher):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def forward(self, x):
+        output_obj = super().forward(x)
+        logits = output_obj.logits
+        return logits
+    
+
+"""class DeiT(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.deit = DeiTForImageClassificationWithTeacher.from_pretrained("facebook/deit-base-distilled-patch16-224", torch_dtype=torch.float32)
+        self.device = self.deit.device
+
+    def forward(self, x):
+        outputs = self.deit(x)
+        logits = outputs.logits
+        return logits"""
 
 class CNNLoader:
 
@@ -176,10 +198,38 @@ class CNNLoader:
             model_ft = xception_loader.load()
             input_size = 299
 
-        elif model_name == "deit":
-            model_ft = DeiTForImageClassificationWithTeacher.from_pretrained("facebook/deit-base-distilled-patch16-224", torch_dtype=torch.float16)
-            input_size = 224
 
+
+
+
+
+
+
+
+
+
+
+
+
+        elif model_name == "deit":
+            model_ft = DeiT.from_pretrained("facebook/deit-base-distilled-patch16-224", torch_dtype=torch.float32)
+            #model_ft = DeiT()
+            #DeiTForImageClassificationWithTeacher
+            input_size = 224
+            
+            """def wrapper(f):  
+
+                def wrap(x):  
+                    print("wrapping DeiT to return logits")  # Pre-function execution  
+                    outputs = f(x)  
+                    logits = outputs.logits
+                    return logits 
+                
+                return wrap
+            
+            wrapper(model_ft)
+            """
+            
         else:
             raise ValueError('wrong model name')
         
@@ -191,6 +241,26 @@ class CNNLoader:
         #print(f'\n\nfinished loading.\n{model_ft}')
         
         return model_ft, input_size
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     def load_adv_pretrained_for_imgnet(self, device, feature_extract):
         

@@ -252,7 +252,7 @@ class AttackConnection:
         orig_x = x.clone().detach()
         perturbed_x = self.adv_attack(x, y)
         self.l2_norm.extend(self.get_l2(perturbed_x, x))
-        self.frqa(perturbed_x, orig_x, paths)
+        #self.frqa(perturbed_x, orig_x, paths)
         paths = self.save_to_adv_dataset(paths, perturbed_x)
         self.adversarial_samples = perturbed_x
         self.n += len(x)

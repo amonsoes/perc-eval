@@ -73,18 +73,28 @@ class SpatialTransforms:
                                         self.normalize], [0,0])
 
         elif transform == 'pretrained_deit':
+            #IMAGENET_STANDARD_MEAN = [0.5, 0.5, 0.5]
+            #IMAGENET_STANDARD_STD = [0.5, 0.5, 0.5]#
+            
             # IMGNet format without augmentations
             # resize, center crop and rescale are done by pre transforms
-            deit_processor = DeiTImageProcessor(do_resize=False, do_center_crop=False, do_rescale=False)
+            """deit_processor = DeiTImageProcessor(do_resize=False, do_center_crop=False, do_rescale=False)
 
             def preprocess_deit(x):
                 preprocessed =  deit_processor.preprocess(x, return_tensors='pt')
-                return preprocessed['pixel_values']
+                return preprocessed['pixel_values']"""
             
-            self.transform_train = T.Compose([preprocess_deit])
+            """self.transform_train = T.Compose([preprocess_deit])
 
             # wrap in custom compose to be able to pass x, y, paths in test loop
-            self.transform_val = CustomCompose([preprocess_deit], [0])
+            self.transform_val = CustomCompose([preprocess_deit], [0])"""
+            
+            normalize = T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+            self.transform_train = T.Compose([T.ConvertImageDtype(torch.float32),
+                                        normalize])
+
+            self.transform_val = CustomCompose([T.ConvertImageDtype(torch.float32),
+                                        normalize], [0,0])
 
         elif transform == 'augmented_pretrained_imgnet':
             # IMGNet format with augmentations

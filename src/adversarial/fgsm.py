@@ -66,7 +66,8 @@ class FGSM(Attack):
             target_labels = self.get_target_label(images, labels)
         
         images.requires_grad = True
-        outputs = self.get_logits(self.model_trms(images))
+        inputs = self.model_trms(images)
+        outputs = self.get_logits(inputs)
 
         # Calculate loss
         if self.targeted:

@@ -136,7 +136,8 @@ class Attack(object):
         self.model = model
         self.model_name = str(model).split("(")[0]
 
-    def get_logits(self, inputs, labels=None, *args, **kwargs):
+    
+    def get_logits(self, inputs):
         if self._normalization_applied is False:
             inputs = self.normalize(inputs)
         logits = self.model(inputs)
