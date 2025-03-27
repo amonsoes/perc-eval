@@ -24,6 +24,8 @@ import matplotlib.pyplot as plt
 import ot
 
 from sklearn.decomposition import PCA
+from torchmetrics.image import MultiScaleStructuralSimilarityIndexMeasure as MSSSIM
+from torchmetrics.image import StructuralSimilarityIndexMeasure as SSIM
 from tqdm import tqdm
 from PIL import Image
 from torch.utils.data import Dataset
@@ -67,6 +69,8 @@ class Stats:
         """
         len_attacks = len(attacks)
         len_attacks_2 = len(attacks2)
+        self.len_attacks = len(attacks)
+        self.len_attacks_2 = len(attacks2)
 
         self.data = data
         self.adv_data_path = './data/perc_eval_copy/8.0'
@@ -74,10 +78,12 @@ class Stats:
         self.total_l2 = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
         self.total_cos = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
         self.total_pearson = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
+        self.total_msssim = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
 
         self.total_l2_2 = torch.zeros((len_attacks_2, len_attacks_2),dtype=torch.float32)
         self.total_cos_2 = torch.zeros((len_attacks_2, len_attacks_2),dtype=torch.float32)
         self.total_pearson_2 = torch.zeros((len_attacks_2, len_attacks_2),dtype=torch.float32)
+        self.total_msssim_2 = torch.zeros((len_attacks_2, len_attacks_2),dtype=torch.float32)
 
         self.cos = nn.CosineSimilarity(dim=(1,2,3), eps=1e-6)
 
@@ -89,6 +95,7 @@ class Stats:
 
         self.n = 0
         self.to_tensor = T.ToTensor()
+        self.msssim = SSIM(data_range=1.0).to('cpu')
     
     def process_data(self):
         for image, label, filename in tqdm(self.data):
@@ -115,11 +122,13 @@ class Stats:
                     cos_result = self.norm_cosine_sim(pert1, pert2)
                     l2_result = self.l2(pert1, pert2)
                     pearson_result = self.norm_pearson_corr(pert1, pert2)
+                    msssim_result = self.ms_ssim(pert1, pert2)
 
                     # fill matrices with result
                     self.total_cos[id, sub_id] += cos_result
                     self.total_l2[id, sub_id] += l2_result
                     self.total_pearson[id, sub_id] += pearson_result
+                    self.total_msssim[id, sub_id] += msssim_result
 
     def check_if_original(self, attack, filename):
         pass
@@ -140,11 +149,13 @@ class Stats:
                     cos_result = self.norm_cosine_sim(pert1, pert2)
                     l2_result = self.l2(pert1, pert2)
                     pearson_result = self.norm_pearson_corr(pert1, pert2)
+                    msssim_result = self.ms_ssim(pert1, pert2)
 
                     # fill matrices with result
                     self.total_cos_2[id, sub_id] += cos_result
                     self.total_l2_2[id, sub_id] += l2_result
                     self.total_pearson_2[id, sub_id] += pearson_result
+                    self.total_msssim_2[id, sub_id] += msssim_result
 
     
     def compare_on_sample(self):
@@ -162,10 +173,15 @@ class Stats:
         avg_l2 = self.total_l2 / self.n
         avg_cos = self.total_cos / self.n
         avg_pearson = self.total_pearson / self.n
+        avg_msssim = self.total_msssim / self.n
 
         avg_l2_2 = self.total_l2_2 / self.n
         avg_cos_2 = self.total_cos_2 / self.n
         avg_pearson_2 = self.total_pearson_2 / self.n
+        avg_msssim_2 = self.total_msssim_2 / self.n
+
+        n_denom_1 = self.len_attacks**2 - self.len_attacks
+        n_denom_2 = self.len_attacks_2**2 - self.len_attacks_2
         
         print('\nAttack Group 2:\n')
         print('Average l2 distances:')
@@ -174,6 +190,8 @@ class Stats:
         print(avg_cos)
         print('Average Inverted Pearson Correlation Coefficient:')
         print(avg_pearson)
+        print('Average Inverted MSSSIM:')
+        print(avg_msssim)
 
         print('\nAttack Group 2:\n')
         print('Average l2 distances:')
@@ -182,32 +200,36 @@ class Stats:
         print(avg_cos_2)
         print('Average Inverted Pearson Correlation Coefficient:')
         print(avg_pearson_2)
+        print('Average Inverted MSSSIM:')
+        print(avg_msssim_2)
 
         # average overall-results
 
 
         print('\nAttack Group 1:\n')
         print('Overall Average l2 distances:')
-        print(avg_l2.mean())
+        print(avg_l2.sum() / n_denom_1)
         print('Overall Average Inverted Cosine Similarities:')
-        print(avg_cos.mean())
+        print(avg_cos.sum() / n_denom_1)
         print('Overall Average Inverted Pearson Correlation Coefficient:')
-        print(avg_pearson.mean())
+        print(avg_pearson.sum()  / n_denom_1)
+        print('Overall Average MSSSIM:')
+        print(avg_msssim.sum()  / n_denom_1)
 
         print('\nAttack Group 2:\n')
         print('Overall Average l2 distances:')
-        print(avg_l2_2.mean())
+        print(avg_l2_2.sum() / n_denom_2)
         print('Overall Average Inverted Cosine Similarities:')
-        print(avg_cos_2.mean())
+        print(avg_cos_2.sum()/ n_denom_2)
         print('Overall Average Inverted Pearson Correlation Coefficient:')
-        print(avg_pearson_2.mean())
+        print(avg_pearson_2.sum() /n_denom_2)
+        print('Overall Average MSSSIM:')
+        print(avg_msssim_2.sum()/ n_denom_2)
 
         self.heatmap(avg_l2, avg_l2_2, 'Average L2')
         self.heatmap(avg_cos, avg_cos_2, 'Average Inverted Normalized Cosine Similarity')
         self.heatmap(avg_pearson, avg_pearson_2, 'Average Inverted Normalized PCC')
-
-
-
+        self.heatmap(avg_msssim, avg_msssim_2, 'Average Inverted SSIM')
 
         return avg_l2, avg_cos, avg_pearson
 
@@ -250,6 +272,13 @@ class Stats:
         x = x.flatten()
         y = y.flatten()
         return 1 - ((1 + F.cosine_similarity(x, y, dim=0) ) / 2).item()
+    
+    def ms_ssim(self, x, y):
+        x = x.unsqueeze(0)
+        y = y.unsqueeze(0)
+        ms_ssim =  1 - self.msssim(x, y)
+        return ms_ssim
+
     
     def norm_pearson_corr(self, x, y):
         """
