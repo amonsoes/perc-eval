@@ -5,7 +5,7 @@ model_name : ImgNetCNN_deit
 transform : pretrained_deit
 lr : 5e-05
 epochs : 15
-batch_size : 16
+batch_size : 64
 adversarial_training : False
 jpeg compression: False
 jpeg compression rate: 99
