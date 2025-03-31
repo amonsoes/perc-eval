@@ -640,7 +640,7 @@ class WhiteBoxAttack(AttackConnection):
         if attack_type == 'fgsm':
             attack = FGSM(model, model_trms=self.model_trms, *args, **kwargs)
         elif attack_type == 'hpf_fgsm':
-            attack = HpfFGSM(model, surrogate_loss=surrogate_loss, model_trms=self.model_trms, hpf_masker=hpf_masker, *args, **kwargs)
+            attack = HpfFGSM(model, model_trms=self.model_trms, hpf_masker=hpf_masker, *args, **kwargs)
         elif attack_type == 'ycbcr_hpf_fgsm':
             attack = torchattacks.attacks.fgsm.YcbcrHpfFGSM(model, surrogate_loss=surrogate_loss, model_trms=self.model_trms, hpf_masker=hpf_masker, *args, **kwargs)
         elif attack_type == 'bim':
