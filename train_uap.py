@@ -213,7 +213,7 @@ def loader_imgnet(dir_data, nb_images = 50000, batch_size = 100, img_size = 224)
         val_dataset,
         batch_size = batch_size,                              
         shuffle = True, 
-        num_workers = max(1, multiprocessing.cpu_count() - 1)
+        num_workers = 2#max(1, multiprocessing.cpu_count() - 1)
     )
     
     return dataloader
