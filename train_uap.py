@@ -273,7 +273,7 @@ if __name__ == '__main__':
 
     imgnet_datapath = args.imagenet_path
 
-    loader = loader_imgnet(imgnet_datapath, 2000, 100) # adjust batch size as appropriate
+    loader = loader_imgnet(imgnet_datapath, 2000, 10) # adjust batch size as appropriate
 
 
     #model
