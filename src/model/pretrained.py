@@ -198,19 +198,6 @@ class CNNLoader:
             model_ft = xception_loader.load()
             input_size = 299
 
-
-
-
-
-
-
-
-
-
-
-
-
-
         elif model_name == "deit":
             model_ft = DeiT.from_pretrained("facebook/deit-base-distilled-patch16-224", torch_dtype=torch.float32)
             #model_ft = DeiT()
@@ -241,26 +228,6 @@ class CNNLoader:
         #print(f'\n\nfinished loading.\n{model_ft}')
         
         return model_ft, input_size
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     def load_adv_pretrained_for_imgnet(self, device, feature_extract):
         

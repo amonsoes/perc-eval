@@ -23,10 +23,13 @@ class CGSPAttack(Attack):
         self.nz = 16
         self.layer = 1
 
-        if arch == 'inc':
-            raise ValueError('Only res (Resnet) available currently.')
-        else:
+        if arch == 'res':
             pretrained =  './src/adversarial/resources/cgsp-res-9.pth'
+        elif arch == 'deit':
+            pretrained =  './src/adversarial/resources/cgsp-deit-9.pth'
+        else:
+            raise ValueError(f'Architecture {arch} not available currently.')
+        
         self.eps = eps
         self.device = device
         self.netG = self.load_from_file(pretrained)
