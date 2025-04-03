@@ -58,6 +58,7 @@ class UAPTrainer:
         _, (x_val, y_val) = next(enumerate(self.data))
         batch_size = len(x_val)
         if uap_init is None:
+            print('init uap to zero')
             batch_delta = torch.zeros_like(x_val) # initialize as zero vector
         else:
             batch_delta = uap_init.unsqueeze(0).repeat([batch_size, 1, 1, 1])
