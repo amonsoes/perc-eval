@@ -247,7 +247,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
 
-    imgnet_datapath = './data/imagenet_dummy'#args.imagenet_path 
+    imgnet_datapath = args.imagenet_path 
 
     loader = loader_imgnet(imgnet_datapath) # adjust batch size as appropriate
 
