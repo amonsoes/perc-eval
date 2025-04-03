@@ -54,6 +54,7 @@ class UAPTrainer:
         losses      losses per iteration
         '''
         print('\nInitialize Training...\n')
+        print(f'PARAMS: beta={beta}, step_decay={step_decay}')
         _, (x_val, y_val) = next(enumerate(self.data))
         batch_size = len(x_val)
         if uap_init is None:
