@@ -27,7 +27,7 @@ IMGNET_STD = [0.5, 0.5, 0.5]
 
 class UAPTrainer:
 
-    def __init__(self, model, data, epochs, eps, beta = 12, step_decay = 0.8, y_target = None, loss_fn = None, layer_name = None, uap_init = None):
+    def __init__(self, model, data, epochs, eps):
         self.model = model
         self.data = data
         self.epochs = epochs
@@ -289,8 +289,8 @@ if __name__ == '__main__':
     beta = 12
     step_decay = 0.7
 
-    trainer = UAPTrainer(model, loader, nb_epoch, eps, beta, step_decay)
-    uap, losses = trainer.train(model, loader, nb_epoch, eps, beta, step_decay)
+    trainer = UAPTrainer(model, loader, nb_epoch, eps)
+    uap, losses = trainer.train(beta, step_decay)
     trainer.save_uap(uap)
 
 
