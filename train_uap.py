@@ -19,6 +19,8 @@ from torchvision.datasets import ImageFolder
 
 from src.model.pretrained import DeiT
 
+torch.multiprocessing.set_sharing_strategy('file_system')
+
 
 
 IMGNET_MEAN = [0.5, 0.5, 0.5]
