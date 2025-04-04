@@ -123,7 +123,7 @@ class UAPTrainer:
         save_name = 'sgd-deit-{self.epochs}-{self.eps}'
         save_path = f'./src/adversarial/resources/{save_name}'
         torch.save(uap, save_path)
-        print('successfully saved at: {save_path}')
+        print(f'successfully saved at: {save_path}')
     
 
 
