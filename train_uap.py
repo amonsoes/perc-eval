@@ -244,12 +244,14 @@ if __name__ == '__main__':
     parser.add_argument('--imagenet_path', type=str, help='set path to ImageNet Dataset')
     parser.add_argument('--epochs', type=int, default=10, help='set epochs')
     parser.add_argument('--device', type=str, default='cpu', help='set device')
+    parser.add_argument('--nb_images', type=int, default=50000, help='set number of images for training')
+    parser.add_argument('--batch_size', type=int, default=100, help='set batch size')
     args = parser.parse_args()
 
 
     imgnet_datapath = args.imagenet_path 
 
-    loader = loader_imgnet(imgnet_datapath) # adjust batch size as appropriate
+    loader = loader_imgnet(imgnet_datapath, nb_images=args.nb_images, batch_size=args.batch_size) # adjust batch size as appropriate
 
 
     #model
