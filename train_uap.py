@@ -120,7 +120,8 @@ class UAPTrainer:
         return delta.data, losses
 
     def save_uap(self, uap):
-        save_name = f'sgd-deit-{self.epochs}-{self.eps}'
+        
+        save_name = f'sgd-deit-{self.epochs}-{round(self.eps,3)}'
         save_path = f'./src/adversarial/resources/{save_name}.pth'
         torch.save(uap, save_path)
         print(f'successfully saved at: {save_path}')
