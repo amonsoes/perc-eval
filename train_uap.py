@@ -184,6 +184,13 @@ def loader_imgnet(dir_data, nb_images = 50000, batch_size = 100, img_size = 224)
     ])
     
     val_dataset = ImageFolder(dir_data, val_transform)
+    
+    # Random subset if not using the full 50,000 validation set
+    if nb_images < 50000:
+        np.random.seed(0)
+        sample_indices = np.random.permutation(range(nb_images))[:nb_images]
+        val_dataset = Subset(val_dataset, sample_indices)
+
     print(f'number of samples: {len(val_dataset.samples)}')
     if len(val_dataset.samples) % batch_size != 0:
         cond = len(val_dataset.samples) % batch_size != 0
@@ -191,12 +198,6 @@ def loader_imgnet(dir_data, nb_images = 50000, batch_size = 100, img_size = 224)
             batch_size -= 1
             cond = len(val_dataset.samples) % batch_size != 0
         print(f'new batch size: {batch_size}')
-    
-    # Random subset if not using the full 50,000 validation set
-    if nb_images < 50000:
-        np.random.seed(0)
-        sample_indices = np.random.permutation(range(nb_images))[:nb_images]
-        val_dataset = Subset(val_dataset, sample_indices)
     
     dataloader = torch.utils.data.DataLoader(
         val_dataset,
