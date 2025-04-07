@@ -267,7 +267,7 @@ if __name__ == '__main__':
 
 
     imgnet_datapath = args.imagenet_path 
-    imgnet_datapath = "./data/imagenet_dummy/" 
+    #imgnet_datapath = "./data/imagenet_dummy/" 
 
     loader = loader_imgnet(imgnet_datapath, nb_images=args.nb_images, batch_size=args.batch_size) # adjust batch size as appropriate
 
