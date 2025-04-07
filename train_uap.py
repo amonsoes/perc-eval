@@ -16,6 +16,7 @@ from torch.utils import model_zoo
 from torch.utils.data import DataLoader, Subset
 from torchvision import models, transforms
 from torchvision.datasets import ImageFolder
+from tqdm import tqdm
 
 from src.model.pretrained import DeiT
 
@@ -90,22 +91,27 @@ class UAPTrainer:
             # perturbation step size with decay
             eps_step = self.eps * step_decay
             
-            for i, (x_val, y_val) in enumerate(self.data):
+            for i, (x_val, y_val) in tqdm(enumerate(self.data)):
                 if batch_delta.grad is not None:
                     batch_delta.grad.zero_() 
                 batch_delta.data = delta.unsqueeze(0).repeat([x_val.shape[0], 1, 1, 1])
 
                 # for targeted UAP, switch output labels to y_target
-                if y_target is not None: y_val = torch.ones(size = y_val.shape, dtype = y_val.dtype) * y_target
+                if y_target is not None: 
+                    y_val = torch.ones(size = y_val.shape, dtype = y_val.dtype) * y_target
                 
                 perturbed = torch.clamp((x_val + batch_delta).to(self.device), 0, 1)
                 outputs = self.model(perturbed)
                 
                 # loss function value
-                if layer_name is None: loss = clamped_loss(outputs, y_val.to(self.device))
-                else: loss = main_value
+                if layer_name is None: 
+                    loss = clamped_loss(outputs, y_val.to(self.device))
+                else: 
+                    loss = main_value
                 
-                if y_target is not None: loss = -loss # minimize loss for targeted UAP
+                if y_target is not None: 
+                    loss = -loss # minimize loss for targeted UAP
+
                 losses.append(torch.mean(loss))
                 loss.backward()
                 
@@ -115,7 +121,8 @@ class UAPTrainer:
                 delta = torch.clamp(delta, -self.eps, self.eps)
                 batch_delta.grad.data.zero_()
         
-        if layer_name is not None: handle.remove() # release hook
+        if layer_name is not None: 
+            handle.remove() # release hook
         
         return delta.data, losses
 
@@ -169,6 +176,7 @@ Code: https://github.com/rgeirhos/texture-vs-shape
 
 # dataloader for ImageNet
 def loader_imgnet(dir_data, nb_images = 50000, batch_size = 100, img_size = 224):
+
     val_transform = transforms.Compose([
         transforms.Resize(256),
         transforms.CenterCrop(img_size),
@@ -176,6 +184,12 @@ def loader_imgnet(dir_data, nb_images = 50000, batch_size = 100, img_size = 224)
     ])
     
     val_dataset = ImageFolder(dir_data, val_transform)
+    if len(val_dataset.samples) % batch_size != 0:
+        cond = len(val_dataset.samples) % batch_size != 0
+        while cond:
+            batch_size += 1
+            cond = len(val_dataset.samples) % batch_size != 0
+        print(f'new batch size: {batch_size}')
     
     # Random subset if not using the full 50,000 validation set
     if nb_images < 50000:
@@ -246,11 +260,11 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=10, help='set epochs')
     parser.add_argument('--device', type=str, default='cpu', help='set device')
     parser.add_argument('--nb_images', type=int, default=50000, help='set number of images for training')
-    parser.add_argument('--batch_size', type=int, default=100, help='set batch size')
+    parser.add_argument('--batch_size', type=int, default=10, help='set batch size')
     args = parser.parse_args()
 
 
-    imgnet_datapath = args.imagenet_path 
+    imgnet_datapath = "./data/imagenet_dummy" #args.imagenet_path 
 
     loader = loader_imgnet(imgnet_datapath, nb_images=args.nb_images, batch_size=args.batch_size) # adjust batch size as appropriate
 
