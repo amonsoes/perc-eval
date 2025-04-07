@@ -192,11 +192,11 @@ def loader_imgnet(dir_data, nb_images = 50000, batch_size = 100, img_size = 224)
         val_dataset = Subset(val_dataset, sample_indices)
 
     print(f'number of samples: {len(val_dataset)}')
-    if len(val_dataset.samples) % batch_size != 0:
-        cond = len(val_dataset.samples) % batch_size != 0
+    if len(val_dataset) % batch_size != 0:
+        cond = len(val_dataset) % batch_size != 0
         while cond:
             batch_size -= 1
-            cond = len(val_dataset.samples) % batch_size != 0
+            cond = len(val_dataset) % batch_size != 0
         print(f'new batch size: {batch_size}')
     
     dataloader = torch.utils.data.DataLoader(
