@@ -191,7 +191,7 @@ def loader_imgnet(dir_data, nb_images = 50000, batch_size = 100, img_size = 224)
         sample_indices = np.random.permutation(range(nb_images))[:nb_images]
         val_dataset = Subset(val_dataset, sample_indices)
 
-    print(f'number of samples: {len(val_dataset.samples)}')
+    print(f'number of samples: {len(val_dataset)}')
     if len(val_dataset.samples) % batch_size != 0:
         cond = len(val_dataset.samples) % batch_size != 0
         while cond:
@@ -267,6 +267,7 @@ if __name__ == '__main__':
 
 
     imgnet_datapath = args.imagenet_path 
+    imgnet_datapath = "./data/imagenet_dummy/" 
 
     loader = loader_imgnet(imgnet_datapath, nb_images=args.nb_images, batch_size=args.batch_size) # adjust batch size as appropriate
 
