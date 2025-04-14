@@ -22,6 +22,8 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 import ot
+import argparse
+
 
 from sklearn.decomposition import PCA
 from torchmetrics.image import MultiScaleStructuralSimilarityIndexMeasure as MSSSIM
@@ -63,7 +65,7 @@ class Nips17Subset(Dataset):
 
 class Stats:
 
-    def __init__(self, data, attacks, attacks2):
+    def __init__(self, data, attacks, attacks2, processing_type):
         """
         pass attacks as list with the names corresponding to the naming in the dataset like this ['pgdl2',...,'vmifgsm']
         """
@@ -96,6 +98,7 @@ class Stats:
         self.n = 0
         self.to_tensor = T.ToTensor()
         self.msssim = SSIM(data_range=1.0).to('cpu')
+        self.processing_type = processing_type
     
     def process_data(self):
         for image, label, filename in tqdm(self.data):
@@ -632,35 +635,62 @@ class L2BarChart(Visualization):
 
 if __name__ == '__main__':
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--processing_type', type=str, default='conv', help='set to conv for comparison against fezza19, set to conv-attn for convolution attention comparison')
+    args = parser.parse_args()
+
     data = Nips17Subset()
+
+    if args.processing_type == 'conv': 
     
-    attacks=[
-        'pgdl2',
-        'vmifgsm',
-        'hpf_fgsm',
-        'sparsesigmaattack',
-        'rcw',
-        'percal',
-        'sgd_uap',
-        'sga_uap',
-        'dim',
-        'bsr',
-        'cgnc',
-        'cgsp',
-        'square_attack',
-        'ppba'
-    ]
+        attacks=[
+            'pgdl2',
+            'vmifgsm',
+            'hpf_fgsm',
+            'sparsesigmaattack',
+            'rcw',
+            'percal',
+            'sgd_uap',
+            'sga_uap',
+            'dim',
+            'bsr',
+            'cgnc',
+            'cgsp',
+            'square_attack',
+            'ppba'
+        ]
 
-    attacks2=[
-        'fgsm',
-        'pgd',
-        'bim',
-        'mifgsm',
-        'cw',
-        'deepfool'
-    ]
+        attacks2=[
+            'fgsm',
+            'pgd',
+            'bim',
+            'mifgsm',
+            'cw',
+            'deepfool'
+        ]
+    
+    elif args.processing_type == 'conv-attn':
 
-    stats = Stats(data, attacks, attacks2)
+        attacks=[
+            'vmifgsm',
+            'sparsesigmaattack',
+            'rcw',
+            'sga_uap',
+            'bsr',
+            'ppba'
+        ]
+
+        attacks2=[
+            'pgdl2',
+            'hpf_fgsm',
+            'percal',
+            'sgd_uap',
+            'dim',
+            'square_attack',
+        ]
+
+
+    stats = Stats(data, attacks, attacks2, args.processing_type)
     stats.process_data()
     stats.get_results()
 

@@ -3,6 +3,7 @@ import math
 
 from torch import nn
 from src.adversarial.attack_base import Attack
+from src.model.pretrained import DeiT
 
 class SGAUAP(Attack):
 
@@ -62,7 +63,9 @@ class SGDUAP(Attack):
 
         if random_uap:
             self.uap = torch.empty((1, 3, 224, 224)).uniform_(-self.eps, self.eps).to(self.device)
-        else:  
+        elif isinstance(model, DeiT):  
+            self.uap = self.load_uap('./src/adversarial/resources/sgd-deit-10-0.039.pth')
+        else:
             self.uap = self.load_uap('./src/adversarial/resources/sgd-resnet50-eps10.pth')
     
     def forward(self, images, labels):
