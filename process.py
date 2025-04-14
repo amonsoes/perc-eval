@@ -13,11 +13,10 @@ class Nips17Subset(Dataset):
     
     def __init__(self):
         super().__init__()
-        path_test = './data/nips17/'
-        path_labels = path_test + 'images.csv'
-        path_images = path_test + 'images/'
-        self.labels = pd.read_csv(path_labels)
-        self.img_dir = path_images
+        self.dir = './data/ext_nips17/'
+        self.wnid_to_class = self.get_wn2id()
+        self.file_to_wnid = self.get_image_ids()
+        self.ind_to_file = {str(e):file for e, file in enumerate(self.file_to_wnid.keys())}
         self.transform = T.Compose([T.Resize(256,  interpolation=InterpolationMode.BILINEAR),
                                     T.CenterCrop(224),
                                     T.ToTensor()])
@@ -26,11 +25,29 @@ class Nips17Subset(Dataset):
         return len(self.labels)
     
     def __getitem__(self, idx):
-        img_path = os.path.join(self.img_dir, self.labels.iloc[idx, 0])
-        image = Image.open(img_path + '.png')
+
+        filename = self.ind_to_file[str(idx)]
+        wn_id = self.file_to_wnid[filename]
+        image = Image.open(self.dir + '/' + wn_id + '/' +   filename)
         image = self.transform(image)
-        label = self.labels.iloc[idx, 6] - 1
-        return image, label, img_path.split('/')[-1]
+        label = self.wnid_to_class[wn_id]
+        return image, label, filename
+
+    def get_wn2id(self):
+        with open('./data/ext_nips17/imagenet_class_index.json', 'r') as f:
+            classes_json = json.loads(f.read())
+        wnid_classes = {wn_id[0] : cls for cls, wn_id  in classes_json.items()}
+        return wnid_classes
+
+    def get_image_ids(self):
+        file_2_wnid = {}
+        for root, dirs, files in os.walk(self.dir, topdown=False):
+            for file in files:
+                if file.endswith('.JPEG'):
+                    file_2_wnid[file] = root.split('/')[-1]
+        return file_2_wnid
+
+        
 
 
 
