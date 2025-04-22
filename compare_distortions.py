@@ -636,7 +636,7 @@ class L2BarChart(Visualization):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--processing_type', type=str, default='conv', help='set to conv for comparison against fezza19, set to conv-attn for convolution attention comparison')
+    parser.add_argument('--processing_type', type=str, default='conv-attn', help='set to conv for comparison against fezza19, set to conv-attn for convolution attention comparison')
     args = parser.parse_args()
 
     data = Nips17Subset()
@@ -672,12 +672,12 @@ if __name__ == '__main__':
     elif args.processing_type == 'conv-attn':
 
         attacks=[
-            'vmifgsm',
-            'sparsesigmaattack',
-            'rcw',
-            'sga_uap',
-            'bsr',
-            'ppba'
+            'pgdl2',
+            'hpf_fgsm',
+            'percal',
+            'sgd_uap',
+            'dim',
+            'square_attack',
         ]
 
         attacks2=[
@@ -688,6 +688,10 @@ if __name__ == '__main__':
             'dim',
             'square_attack',
         ]
+
+        if args.processing_type == 'conv-attn':
+            attacks2 = [i + '_deit' for i in attacks2]
+            attacks = attacks + attacks2
 
 
     stats = Stats(data, attacks, attacks2, args.processing_type)
