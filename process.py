@@ -2,6 +2,7 @@ import json
 import random
 import torchvision.transforms as T
 import pandas as pd
+import csv
 import os
 import torch
 import numpy as np
@@ -20,15 +21,20 @@ class DatasetConstructor:
     def __init__(self):
         self.n = 0
         self.to_grey = T.Grayscale()
-        nodes = self.get_node_level_and_children(50)
+        nodes = self.get_node_level_and_children(270)
         self.classes = self.get_classes_from_nodes(nodes)
-        self.data = Nips17Subset()
+        self.data = ImgNetSubset()
         self.radial_dir = './data/radial_profiles/'
         self.clr_dir = './data/color_profiles/'
         self.survey_dir = './data/survey/'
         self.clear_directories()
+        self.cls_file = self.survey_dir + 'cls_file.csv'
+        with open(self.cls_file, 'w') as f:
+            csv_file = csv.writer(f)
+            csv_file.writerow(['filename', 'class'])
 
         self.gather_pool_of_images(self.classes)
+
 
     ########## semantically diverse functions
 
@@ -45,7 +51,7 @@ class DatasetConstructor:
             return nodes
 
     @staticmethod
-    def recursive_depth(leafs, classes_json, num_classes, leaf_incl_prob=0.99):
+    def recursive_depth(leafs, classes_json, num_classes, leaf_incl_prob=0.95):
 
         call_stack = []
         for node in classes_json:
@@ -178,18 +184,25 @@ class DatasetConstructor:
     
     def gather_pool_of_images(self, classes):
         imgs_dict = {str(i):[] for i in range(0, 1000)}
-        for e,cls in enumerate(self.classes):
+        for e,cls in enumerate(classes):
             images, ycbcr_images = self.data.get_images_for_class(cls)
             if e % 2 == 0:
                 max_dissim_img, dissim = self.frequency_dissimilarity(images)
             else:
                 max_dissim_img, dissim = self.clr_int_dissimilarity(ycbcr_images, images)
             save_image(max_dissim_img, f'{self.survey_dir}{e}.png')
+            self.save_cls(filename=e, cls=cls['index'])
 
         return imgs_dict
+    
+    def save_cls(self, filename, cls):
+        with open(self.cls_file, 'a') as f:
+            csv_file = csv.writer(f)
+            csv_file.writerow([filename, cls])
 
 
-class Nips17Subset(Dataset):
+
+class ImgNetSubset(Dataset):
     
     def __init__(self):
         super().__init__()
@@ -200,10 +213,10 @@ class Nips17Subset(Dataset):
         self.file_to_class = {k:self.wnid_to_class[v] for k,v in self.file_to_wnid.items()}
         self.ind_to_file = {str(e):file for e, file in enumerate(self.file_to_wnid.keys())}
         self.transform = T.Compose([T.Resize(256,  interpolation=InterpolationMode.BILINEAR),
-                                    T.CenterCrop(224),
+                                    T.CenterCrop(256),
                                     T.ToTensor()])
         self.transform_ycbcr = T.Compose([T.Resize(256,  interpolation=InterpolationMode.BILINEAR),
-                                    T.CenterCrop(224),
+                                    T.CenterCrop(256),
                                     T.ToTensor()])
         
 
@@ -247,6 +260,9 @@ class Nips17Subset(Dataset):
                 if file.endswith('.JPEG'):
                     file_2_wnid[file] = root.split('/')[-1]
         return file_2_wnid
+
+
+
     
 
 
@@ -254,4 +270,7 @@ class Nips17Subset(Dataset):
 if __name__ == '__main__':
 
     dataset_constructor = DatasetConstructor()
+
+
+
     

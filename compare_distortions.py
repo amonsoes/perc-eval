@@ -70,22 +70,34 @@ class Stats:
         pass attacks as list with the names corresponding to the naming in the dataset like this ['pgdl2',...,'vmifgsm']
         """
         len_attacks = len(attacks)
-        len_attacks_2 = len(attacks2)
         self.len_attacks = len(attacks)
-        self.len_attacks_2 = len(attacks2)
 
         self.data = data
         self.adv_data_path = './data/perc_eval_copy/8.0'
 
-        self.total_l2 = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
-        self.total_cos = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
-        self.total_pearson = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
-        self.total_msssim = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
+        if processing_type == 'conv-attn':
+            
+            #len_attacks = int(len_attacks//2)
+            #self.len_attacks = len_attacks
 
-        self.total_l2_2 = torch.zeros((len_attacks_2, len_attacks_2),dtype=torch.float32)
-        self.total_cos_2 = torch.zeros((len_attacks_2, len_attacks_2),dtype=torch.float32)
-        self.total_pearson_2 = torch.zeros((len_attacks_2, len_attacks_2),dtype=torch.float32)
-        self.total_msssim_2 = torch.zeros((len_attacks_2, len_attacks_2),dtype=torch.float32)
+            self.total_l2 = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
+            self.total_cos = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
+            self.total_pearson = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
+            self.total_msssim = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
+
+        else:
+            len_attacks_2 = len(attacks2)
+            self.len_attacks_2 = len(attacks2)
+
+            self.total_l2 = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
+            self.total_cos = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
+            self.total_pearson = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
+            self.total_msssim = torch.zeros((len_attacks, len_attacks),dtype=torch.float32)
+
+            self.total_l2_2 = torch.zeros((len_attacks_2, len_attacks_2),dtype=torch.float32)
+            self.total_cos_2 = torch.zeros((len_attacks_2, len_attacks_2),dtype=torch.float32)
+            self.total_pearson_2 = torch.zeros((len_attacks_2, len_attacks_2),dtype=torch.float32)
+            self.total_msssim_2 = torch.zeros((len_attacks_2, len_attacks_2),dtype=torch.float32)
 
         self.cos = nn.CosineSimilarity(dim=(1,2,3), eps=1e-6)
 
@@ -102,8 +114,11 @@ class Stats:
     
     def process_data(self):
         for image, label, filename in tqdm(self.data):
-            self.process_image_attacks1(filename, image)
-            self.process_image_attacks2(filename, image)
+            if self.processing_type == 'conv':
+                self.process_image_attacks1(filename, image)
+                self.process_image_attacks2(filename, image)
+            else:
+                self.process_image_attacks1_convattn(filename, image)
             self.n += 1
 
 
@@ -132,6 +147,30 @@ class Stats:
                     self.total_l2[id, sub_id] += l2_result
                     self.total_pearson[id, sub_id] += pearson_result
                     self.total_msssim[id, sub_id] += msssim_result
+
+    def process_image_attacks1_convattn(self, filename, image):
+        for attack in self.attacks:
+            id = self.attacks_to_id[attack]
+            adv_image1 = self.load_adv_sample(attack, filename)
+            pert1_int = image - adv_image1
+            pert1 = self.to_unit_length(pert1_int)
+            sub_attack = attack + '_res'
+
+            adv_image2 = self.load_adv_sample(sub_attack, filename)
+            pert2_int = image - adv_image2
+            pert2 = self.to_unit_length(pert2_int)
+
+            # compute l2, cos, pearson
+            cos_result = self.norm_cosine_sim(pert1, pert2)
+            l2_result = self.l2(pert1, pert2)
+            pearson_result = self.norm_pearson_corr(pert1, pert2)
+            msssim_result = self.ms_ssim(pert1, pert2)
+
+            # fill matrices with result
+            self.total_cos[id, id] += cos_result
+            self.total_l2[id, id] += l2_result
+            self.total_pearson[id, id] += pearson_result
+            self.total_msssim[id, id] += msssim_result
 
     def check_if_original(self, attack, filename):
         pass
@@ -171,8 +210,14 @@ class Stats:
             l2_plot.process_data(image, filename)
             self.n += 1
 
-    
     def get_results(self):
+        if self.processing_type == 'conv':
+            avg_l2, avg_cos, avg_pearson = self.get_results_conv()
+        else:
+            avg_l2, avg_cos, avg_pearson = self.get_results_conv_attn()
+        return avg_l2, avg_cos, avg_pearson
+
+    def get_results_conv(self):
         avg_l2 = self.total_l2 / self.n
         avg_cos = self.total_cos / self.n
         avg_pearson = self.total_pearson / self.n
@@ -233,6 +278,42 @@ class Stats:
         self.heatmap(avg_cos, avg_cos_2, 'Average Inverted Normalized Cosine Similarity')
         self.heatmap(avg_pearson, avg_pearson_2, 'Average Inverted Normalized PCC')
         self.heatmap(avg_msssim, avg_msssim_2, 'Average Inverted SSIM')
+
+        return avg_l2, avg_cos, avg_pearson
+
+
+    def get_results_conv_attn(self):
+        avg_l2 = self.total_l2 / self.n
+        avg_cos = self.total_cos / self.n
+        avg_pearson = self.total_pearson / self.n
+        avg_msssim = self.total_msssim / self.n
+
+
+        n_denom_1 = self.len_attacks**2 - self.len_attacks
+        
+        print('\nAttack Group 2:\n')
+        print('Average l2 distances:')
+        print(avg_l2)
+        print('Average Inverted Cosine Similarities:')
+        print(avg_cos)
+        print('Average Inverted Pearson Correlation Coefficient:')
+        print(avg_pearson)
+        print('Average Inverted MSSSIM:')
+        print(avg_msssim)
+
+        # average overall-results
+
+
+        print('\nAttack Group 1:\n')
+        print('Overall Average l2 distances:')
+        print(avg_l2.sum() / n_denom_1)
+        print('Overall Average Inverted Cosine Similarities:')
+        print(avg_cos.sum() / n_denom_1)
+        print('Overall Average Inverted Pearson Correlation Coefficient:')
+        print(avg_pearson.sum()  / n_denom_1)
+        print('Overall Average MSSSIM:')
+        print(avg_msssim.sum()  / n_denom_1)
+
 
         return avg_l2, avg_cos, avg_pearson
 
@@ -688,10 +769,6 @@ if __name__ == '__main__':
             'dim',
             'square_attack',
         ]
-
-        if args.processing_type == 'conv-attn':
-            attacks2 = [i + '_deit' for i in attacks2]
-            attacks = attacks + attacks2
 
 
     stats = Stats(data, attacks, attacks2, args.processing_type)

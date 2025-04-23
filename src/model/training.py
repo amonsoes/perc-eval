@@ -127,9 +127,6 @@ class CNNTraining(Training):
                 x = self.data.post_transforms.transform_val(x, y, paths)
                 x, y = x.to(self.device), y.to(self.device)
                 x_hat = self.model(x)
-                """if isinstance(self.model, DeiTForImageClassification ) or isinstance(self.model, DeiTForImageClassificationWithTeacher):
-                    # Deit Preprocessing returns list TODO: unpack data type in transfrom
-                    x_hat = x_hat.logits"""
                 self.utils.metrics(x_hat, y)
                 self.report(x_hat, y, paths)
             # compute Acc, Recall, Precision, F1, ....

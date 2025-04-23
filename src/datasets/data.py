@@ -1,7 +1,7 @@
 import csv
 
 from torch.utils.data import DataLoader, Subset, random_split
-from src.datasets.subsets import Nips17Subset, CustomCIFAR10, CustomCIFAR100, FlickrSubset
+from src.datasets.subsets import Nips17Subset, CustomCIFAR10, CustomCIFAR100, FlickrSubset, SurveySubset
 from src.datasets.data_transforms.img_transform import PreTransforms, PostTransforms
 from torchvision.datasets import MNIST, CIFAR10, CIFAR100
 
@@ -19,6 +19,8 @@ class Data:
             dataset = CIFAR10Dataset(*args, **kwargs)
         elif dataset_name == '140k_flickr_faces':
             dataset = FlickrFaces(*args, **kwargs)
+        elif dataset_name == 'survey':
+            dataset = SurveyDataset(*args, **kwargs)
         else:
             raise ValueError('Dataset not recognized')
         return dataset
@@ -155,6 +157,35 @@ class Nips17ImgNetData(BaseDataset):
             for ind, cat in filereader:
                 categories[int(ind) - 1] = cat
         return categories
+
+class SurveyDataset(Nips17ImgNetData):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def get_data(self, transform_val, target_transform):
+        path_test = './data/survey/'
+        path_labels = path_test + 'images.csv'
+        path_images = path_test + 'images/'
+        test = SurveySubset(label_path=path_labels, 
+                            img_path=path_images, 
+                            transform=transform_val, 
+                            target_transform=target_transform, 
+                            adversarial=self.adversarial_opt.adversarial, 
+                            is_test_data=True)
+        return test
+        
+    def get_categories(self):
+        categories = {}
+        path = './data/survey/categories.csv'
+        with open(path, 'r') as cats:
+            filereader = csv.reader(cats)
+            next(filereader)
+            for ind, cat in filereader:
+                categories[int(ind) - 1] = cat
+        return categories
+
+
 
 class MNISTDataset(BaseDataset):
     

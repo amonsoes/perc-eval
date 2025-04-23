@@ -45,7 +45,7 @@ def run_setup(args, model, input_size, n_classes, model_dir_name):
 
 if __name__ == '__main__':
     
-    if args.dataset == 'nips17':
+    if args.dataset in ['nips17', 'survey']:
         n_classes = 1000
         model_dir_name = 'ImgNetCNN'
     elif args.dataset == 'cifar10':
