@@ -12,8 +12,8 @@ This repository holds the code for the paper "Evaluating the perceptual Quality 
 
 ## Models
 
-- ResNet: Pretrained IMGNet model. [He et al 2016](https://www.cv-foundation.org/openaccess/content_cvpr_2016/papers/He_Deep_Residual_Learning_CVPR_2016_paper.pdf)
-- Inception: Pretrained IMGNet model with depthwise-separable convolutions. [Szegedy et al 2015](https://arxiv.org/pdf/1512.00567.pdf)
+- ResNet: Pretrained IMGNet model. [He et al. 2016](https://www.cv-foundation.org/openaccess/content_cvpr_2016/papers/He_Deep_Residual_Learning_CVPR_2016_paper.pdf)
+- DeiT: data-efficient visual transformer [Touvron et al. 2020](https://arxiv.org/abs/2012.12877)
 
 
 <br />
