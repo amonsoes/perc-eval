@@ -23,3 +23,8 @@
 /pycache/
 
 /survey/data/perc_eval/*/*/*.png
+
+/survey/data/perc_eval/images/*.png
+
+/survey/data/perc_eval/images_new/*.png
+
