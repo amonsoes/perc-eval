@@ -717,7 +717,7 @@ class L2BarChart(Visualization):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--processing_type', type=str, default='conv-attn', help='set to conv for comparison against fezza19, set to conv-attn for convolution attention comparison')
+    parser.add_argument('--processing_type', type=str, default='conv', help='set to conv for comparison against fezza19, set to conv-attn for convolution attention comparison')
     args = parser.parse_args()
 
     data = Nips17Subset()
@@ -769,6 +769,9 @@ if __name__ == '__main__':
             'dim',
             'square_attack',
         ]
+
+    print(f'Initialize the comparison of the following attack groups: \nG1: {attacks}\nG2: {attacks2}\n')
+    print('Comparison of perturbation in terms of distance (L2), alignment (COS) and correlation (PLCC)....')
 
 
     stats = Stats(data, attacks, attacks2, args.processing_type)

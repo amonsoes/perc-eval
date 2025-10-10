@@ -1,6 +1,6 @@
 # Perceptual Evaluation
 
-This repository holds the code for the paper "Can metrics based on function approximation accurately model the pereptual evaluation of adversarial samples?". It contains commands to replicate all experiments and the survey results.
+This repository holds the code for the paper "Evaluating the perceptual Quality of Adversarial Samples". It contains commands to replicate all experiments and the survey results.
 <br />
 
 ## Supported Datasets
@@ -30,6 +30,24 @@ Install remaining modules:
 ```
 pip install -r requirements.txt
 ```
+
+## Replicate Survey Results
+
+The folder './survey/' holds the results as a CSV file as well as a script to process and plot these results.
+
+```
+python3 eval_survey.py
+```
+
+## Replicate Perturbation Diversity Experiments
+
+The file 'compare_distortions.py' enables the comparison of two attack groups in terms of perturbation diversity.
+Group 1 is the group of methods we used to conduct our survey. Group 2 are the attacks used by Fezza et al. 19
+
+```
+python3 compare_distortions.py
+```
+
 
 ## Attacks
 
@@ -210,7 +228,7 @@ python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretr
 all other parameters are set by default.
 
 ```bash
-python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretrained --adversarial True --steps 10000 --spatial_adv_type ppba --surrogate_model resnet --surrogate_input_size 224 --batchsize 128 --device cuda:0 --is_targeted False --n_queries=5000 --kappa=8
+python3 run_pretrained.py --dataset nips17 --model_name resnet --transform pretrained --adversarial True --steps 10000 --spatial_adv_type ppba --surrogate_model resnet --surrogate_input_size 224 --batchsize 1 --device cuda:0 --is_targeted False --n_queries=5000 --kappa=8
 ```
 
 CURRENTLY ONLY WORKS WITH batchsize=1
