@@ -49,6 +49,10 @@ python3 compare_distortions.py
 ```
 
 
+## LASPEP Dataset
+
+The dataset described in the paper will be published soon...
+
 ## Attacks
 
 We conducted our experiments on a broad set of diverse adversarial attacks. Here are the commands to run them.
