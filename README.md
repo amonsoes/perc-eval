@@ -3,7 +3,7 @@
 This repository holds the code for the paper "Evaluating the perceptual Quality of Adversarial Samples". It contains commands to replicate all experiments and the survey results.
 <br />
 
-## Supported Datasets
+## LASPEP Dataset Basis
 
 - ImageNet ILSVRC 2012 Challenge Dataset. [Find Here] (https://image-net.org/challenges/LSVRC/index.php)
 - Nips2017 Adversarial Challenge ImageNet Subset. [Find Here](https://www.kaggle.com/competitions/nips-2017-defense-against-adversarial-attack/overview)
