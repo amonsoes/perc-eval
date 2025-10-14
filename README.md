@@ -42,6 +42,7 @@ pip install git+https://github.com/necla-ml/Diff-JPEG
 The folder './survey/' holds the results as a CSV file as well as a script to process and plot these results.
 
 ```
+cd ./survey/
 python3 eval_survey.py
 ```
 
