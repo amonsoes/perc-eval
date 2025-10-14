@@ -55,6 +55,8 @@ Group 1 is the group of methods we used to conduct our survey. Group 2 are the a
 python3 compare_distortions.py
 ```
 
+**Note**: to run this script you'll need access to a bigger variant of our LASPEP dataset, which we will share upon request.
+
 
 ## LASPEP Dataset
 
