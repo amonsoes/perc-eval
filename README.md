@@ -22,13 +22,19 @@ This repository holds the code for the paper "Evaluating the perceptual Quality 
 
 (1) **Install module requirements**
 
-All experiments performed on Python 3.10, torch 2.0+cu117 and torchvision 0.15.1+cu117
+All experiments performed on Python 3.10, torch 2.4+cu124 and torchvision 0.19.0+cu124
 Download and install torch + torchvision [here](https://pytorch.org/)
 
-Install remaining modules:
+(2) Install remaining modules:
 
 ```
 pip install -r requirements.txt
+```
+
+(3) Install special modules:
+
+```
+pip install git+https://github.com/necla-ml/Diff-JPEG
 ```
 
 ## Replicate Survey Results
