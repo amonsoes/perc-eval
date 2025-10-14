@@ -13,6 +13,7 @@ from scipy.stats import pearsonr, spearmanr, t
 from process import DatasetConstructor
 from PIL import Image
 
+
 class DataProcessor:
 
     def __init__(self):
@@ -677,6 +678,8 @@ if __name__ == '__main__':
     # get agreement of MOS and IQA in terms of pearson, spearman, rmse, od as a dataframe
     metric_df = data_processor.compare_to_iqa()
     print(metric_df)
+    #
+    os.chdir('../')
 
     # get frequency and MOS correlations as pearson and as a graph
 
