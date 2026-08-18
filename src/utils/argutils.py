@@ -34,7 +34,7 @@ def save_setup(args, filename):
                                     conv2=args.conv2,
                                     pool2=args.pool2,
                                     fc2=args.fc2)
-        elif filename == 'run_pretrained.py':
+        elif filename in ['run_pretrained.py', 'distortion_success_correlation.py']:
             save_opt = ArgOrganizer(model_name=args.model_name,
                                     n_channels=args.n_channels)
         elif filename == 'run_coatnet.py':
@@ -316,7 +316,7 @@ def adversarial_setup(args, filename):
         else:
             spatial_attack_params.hpf_mask_params = None
         adversarial_opt.spatial_attack_params = spatial_attack_params
-    if filename == 'run_pretrained.py':
+    if filename in ['run_pretrained.py', 'distortion_success_correlation.py']:
         input_size = 299 if args.model_name == 'xception' else 224
         adversarial_opt.input_size = input_size   
     else:

@@ -55,12 +55,29 @@ Group 1 is the group of methods we used to conduct our survey. Group 2 are the a
 python3 compare_distortions.py
 ```
 
-**Note**: to run this script you'll need access to a bigger variant of our LASPEP dataset, which we will share upon request.
+**Note**: to run this script you'll need access to a bigger variant of our LASPEP dataset, which is available for download [here].(https://mega.nz/file/EMpEmRya#ccMaeFZtRtIICZBleZLlcZoyRga6pbGGFV8mQhsJeZQ).
+
+- Unzip the folder.
+- Place the folder in the ./data/ path.
+- Run the command above.
+
+
+## Replicate Perturbation Diversity Experiments
+
+The file 'distortion_success_correlation.py' enables the reproduction of the experiment investigating the relationship between logit displacement and perceived distortion (MOS)
+
+```
+python3 distortion_success_correlation.py
+```
 
 
 ## LASPEP Dataset
 
-The dataset described in the paper will be published soon...
+The dataset described in the paper is available in
+
+./survey/data/
+
+and will be published in a individual-rating:image format in the near future.
 
 ## Attacks
 

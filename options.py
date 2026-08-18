@@ -174,7 +174,7 @@ def build_args():
     # ========= PRETRAINED OPTIONS =========
 
 
-    elif filename == 'run_pretrained.py':
+    elif filename in ['run_pretrained.py', 'distortion_success_correlation.py']:
 
         #transfer model options
         parser.add_argument('--model_name', type=str, default='resnet', help='set the Image Net model you want to transfer')

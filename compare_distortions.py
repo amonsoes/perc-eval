@@ -73,7 +73,7 @@ class Stats:
         self.len_attacks = len(attacks)
 
         self.data = data
-        self.adv_data_path = './data/perc_eval_copy/8.0'
+        self.adv_data_path = './data/compare_distortions'
 
         if processing_type == 'conv-attn':
             
@@ -320,11 +320,36 @@ class Stats:
     def heatmap(self, matrix1, matrix2, analysis_type):
 
         fig, (ax1, ax2) = plt.subplots(1, 2)
-        pearson_dataframe = pd.DataFrame(matrix1.numpy(), index=self.attacks, columns=self.attacks)
-        pearson_dataframe2 = pd.DataFrame(matrix2.numpy(), index=self.attacks2, columns=self.attacks2)
 
-        sns.heatmap(pearson_dataframe, cmap="coolwarm", annot=True, linecolor='white', linewidths=0.1, ax=ax1)
-        sns.heatmap(pearson_dataframe2, cmap="coolwarm", annot=True, linecolor='white', linewidths=0.1, ax=ax2)
+        transform_label = {
+            'pgdl2':'PGDL2',
+            'vmifgsm':'VMIFGSM',
+            'hpf_fgsm':'HPF-FGSM',
+            'sparsesigmaattack':'L0+Linf',
+            'rcw':'RCW',
+            'percal': 'PerCAL',
+            'sgd_uap': 'SGD-UAP',
+            'sga_uap': 'SGA-UAP',
+            'dim': 'DIM',
+            'bsr': 'BSR',
+            'cgnc': 'CGNC',
+            'cgsp': 'C-GSP',
+            'square_attack': 'Square',
+            'ppba': 'PPBA',
+            'fgsm':'FGSM',
+            'pgd':'PGD',
+            'bim': 'BIM',
+            'mifgsm':'MIFGSM',
+            'cw': 'C&W',
+            'deepfool': 'Deepfool'
+        }
+
+
+        pearson_dataframe = pd.DataFrame(matrix1.numpy(), index=[transform_label[x] for x in self.attacks], columns=[transform_label[x] for x in self.attacks])
+        pearson_dataframe2 = pd.DataFrame(matrix2.numpy(), index=[transform_label[x] for x in self.attacks2], columns=[transform_label[x] for x in self.attacks2])
+
+        sns.heatmap(pearson_dataframe, cmap="gray", annot=True, linecolor='gray', linewidths=0.1, ax=ax1, annot_kws={"size": 11})
+        sns.heatmap(pearson_dataframe2, cmap="gray", annot=True, linecolor='gray', linewidths=0.1, ax=ax2, annot_kws={"size": 11})
 
         ax1.set_title('Group 1')
         ax2.set_title('Group 2')
@@ -597,8 +622,8 @@ class PearsonHeatmap(Visualization):
             pearson_dataframe = pd.DataFrame(pearson_matrix.numpy(), index=self.attacks, columns=self.attacks)
             pearson_dataframe2 = pd.DataFrame(pearson_matrix2.numpy(), index=self.attacks2, columns=self.attacks2)
 
-            sns.heatmap(pearson_dataframe, cmap="coolwarm", annot=True, linecolor='white', linewidths=0.1, ax=ax1)
-            sns.heatmap(pearson_dataframe2, cmap="coolwarm", annot=True, linecolor='white', linewidths=0.1, ax=ax2)
+            sns.heatmap(pearson_dataframe, cmap="gray_r", annot=True, linecolor='black', linewidths=0.1, ax=ax1, annot_kws={"size": 30})
+            sns.heatmap(pearson_dataframe2, cmap="gray_r", annot=True, linecolor='black', linewidths=0.1, ax=ax2, annot_kws={"size": 30})
 
             ax1.set_title('Group 1')
             ax2.set_title('Group 2')
@@ -612,7 +637,7 @@ class PearsonHeatmap(Visualization):
             # Plot heatmap of correlations
             plt.figure(figsize=(8,6))
             pearson_dataframe = pd.DataFrame(pearson_matrix.numpy(), index=self.attacks, columns=self.attacks)
-            sns.heatmap(pearson_dataframe, cmap="coolwarm", annot=True, linecolor='white', linewidths=0.1)
+            sns.heatmap(pearson_dataframe, cmap="grey", annot=True, linecolor='black', linewidths=0.1, annot_kws={"size": 30})
             plt.title("Pearson Correlation of Adversarial Perturbations", weight='bold')
             plt.show()
 
