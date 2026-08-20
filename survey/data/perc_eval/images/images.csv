@@ -17,7 +17,7 @@ filename,attack,pert_bound
 77,rcw,4.0
 66,rcw,8.0
 71,rcw,15.0
-73,rcw,23.0
+74,rcw,23.0
 63,rcw,38.0
 83,cgnc,4.0
 85,cgnc,8.0

@@ -188,7 +188,7 @@ def visualize_pred_displacement(info_dict, model_name):
     else:
         raise ValueError('Model not recognized.')
 
-    sns.set_theme(style="whitegrid", context="paper", font_scale=1.5)
+    sns.set_theme(style="whitegrid", context="paper", font_scale=1.6)
 
     data = []
     for attack, perts in info_dict.items():
@@ -208,7 +208,7 @@ def visualize_pred_displacement(info_dict, model_name):
         columns=['MOS', 'Logit Margin Drop', 'Prediction Flip', 'Lower CI Bound', 'Upper CI Bound']
         )
 
-    fig, ax = plt.subplots(figsize=(7.0, 4.6), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(8.0, 5.6), constrained_layout=True)
 
     ax.errorbar(
     df["MOS"],
@@ -280,7 +280,7 @@ def visualize_pred_displacement(info_dict, model_name):
         0.3,
         "No margin change",
         color="0.4",
-        fontsize=8,
+        fontsize=11,
         va="bottom",
     )
 
@@ -306,7 +306,7 @@ def visualize_pred_displacement(info_dict, model_name):
     )
 
     plt.title(
-        f"Perceived distortion and prediction displacement ({model_name})",fontweight='bold'
+        f"Perceived Distortion And Prediction Displacement ({model_name})",fontweight='bold'
     )
 
     ax.legend(
