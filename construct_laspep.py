@@ -27,7 +27,7 @@ class DatasetConstructor:
         self.radial_dir.mkdir(parents=True, exist_ok=True)
         self.clr_dir = Path('./data/color_profiles/')
         self.clr_dir.mkdir(parents=True, exist_ok=True)
-        self.survey_dir = Path('./construction_data/').mkdir(parents=True, exist_ok=True)
+        self.survey_dir = './construction_data/'
         self.clear_directories()
         self.cls_file = self.survey_dir + 'cls_file.csv'
         with open(self.cls_file, 'w') as f:
