@@ -23,8 +23,10 @@ class DatasetConstructor:
         nodes = self.get_node_level_and_children(72)
         self.classes = self.get_classes_from_nodes(nodes)
         self.data = ImgNetSubset()
-        self.radial_dir = Path('./data/radial_profiles/').mkdir(parents=True, exist_ok=True)
-        self.clr_dir = Path('./data/color_profiles/').mkdir(parents=True, exist_ok=True)
+        self.radial_dir = Path('./data/radial_profiles/')
+        self.radial_dir.mkdir(parents=True, exist_ok=True)
+        self.clr_dir = Path('./data/color_profiles/')
+        self.clr_dir.mkdir(parents=True, exist_ok=True)
         self.survey_dir = Path('./construction_data/').mkdir(parents=True, exist_ok=True)
         self.clear_directories()
         self.cls_file = self.survey_dir + 'cls_file.csv'
