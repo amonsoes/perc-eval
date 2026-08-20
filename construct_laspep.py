@@ -12,6 +12,7 @@ from torchvision.transforms import InterpolationMode
 from torch.utils.data import Dataset
 from sklearn.metrics.pairwise import cosine_distances
 from torchvision.utils import save_image
+from pathlib import Path
 
 
 class DatasetConstructor:
@@ -22,9 +23,9 @@ class DatasetConstructor:
         nodes = self.get_node_level_and_children(72)
         self.classes = self.get_classes_from_nodes(nodes)
         self.data = ImgNetSubset()
-        self.radial_dir = './data/radial_profiles/'
-        self.clr_dir = './data/color_profiles/'
-        self.survey_dir = './construction_data/'
+        self.radial_dir = Path('./data/radial_profiles/').mkdir(parents=True, exist_ok=True)
+        self.clr_dir = Path('./data/color_profiles/').mkdir(parents=True, exist_ok=True)
+        self.survey_dir = Path('./construction_data/').mkdir(parents=True, exist_ok=True)
         self.clear_directories()
         self.cls_file = self.survey_dir + 'cls_file.csv'
         with open(self.cls_file, 'w') as f:
