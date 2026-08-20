@@ -114,12 +114,16 @@ and will be published in a individual-rating:image format in the near future.
  ```
  ./data/ext_nips17/
  ```
-
- - Run Data retrieval:
+- Move the file ./imagenet_class_index.json to ./data/ext_nips17/
+- Run Data Retrieval:
 
  ```
  python3 construct_laspep.py
  ```
+
+ the data will be saved in ./construction_data/
+
+ As at the time of the creation a random seed was missing, the images will be different from the images present in LASPEP.
 
 
 ## Attacks

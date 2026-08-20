@@ -24,7 +24,7 @@ class DatasetConstructor:
         self.data = ImgNetSubset()
         self.radial_dir = './data/radial_profiles/'
         self.clr_dir = './data/color_profiles/'
-        self.survey_dir = './data/survey/'
+        self.survey_dir = './construction_data/'
         self.clear_directories()
         self.cls_file = self.survey_dir + 'cls_file.csv'
         with open(self.cls_file, 'w') as f:
