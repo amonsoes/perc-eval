@@ -1,0 +1,35 @@
+# Dependency-analysis configuration for perc-eval.
+#
+# Runtime dependencies remain declared in requirements.txt. This file makes
+# deptry's interpretation of this repository explicit and reproducible.
+
+[tool.deptry]
+requirements_files = ["requirements.txt"]
+extend_exclude = [
+    "src/adversarial/black_box/defenisve_model\\.py",
+]
+
+# Packages and modules implemented by this repository. The survey scripts are
+# currently flat modules rather than a Python package, so list them explicitly.
+known_first_party = [
+    "src",
+    "adversarial",
+    "datasets",
+    "model",
+    "utils",
+    "process",
+    "bootstrap_checkpoint",
+    "advanced_survey_stats",
+]
+
+# Distribution names do not always match their top-level Python import names.
+# Keeping these mappings here avoids environment-dependent guesses.
+[tool.deptry.package_module_name_map]
+"scikit-image" = "skimage"
+"POT" = "ot"
+"torch-dct" = "torch_dct"
+"pytorch-colors" = "pytorch_colors"
+"DISTS-pytorch" = "DISTS_pytorch"
+"IQA-pytorch" = "IQA_pytorch"
+"diff-jpeg" = "diff_jpeg"
+

@@ -20,9 +20,19 @@ This repository holds the code for the paper "Evaluating the perceptual Quality 
 
 ## Requirements
 
+(0) Install Environment:
+
+Create a Conda environment using Python 3.12.3:
+
+conda create -n perceval python=3.12.3 pip
+
+Activate the environment:
+
+conda activate perceval
+
 (1) **Install module requirements**
 
-All experiments performed on Python 3.10, torch 2.4+cu124 and torchvision 0.19.0+cu124
+All experiments performed on Python 3.12, torch 2.4+cu124 and torchvision 0.19.0+cu124
 Download and install torch + torchvision [here](https://pytorch.org/)
 
 (2) Install remaining modules:
@@ -36,6 +46,22 @@ pip install -r requirements.txt
 ```
 pip install git+https://github.com/necla-ml/Diff-JPEG
 ```
+
+(4) Validate
+
+```
+python -m pip install deptry==0.25.1
+```
+
+Dependency declarations are checked with deptry. From the repository root, run:
+
+```
+conda run -n adv deptry .
+```
+
+This command uses the adv Conda environment and does not require it to be activated. A valid dependency configuration produces:
+
+Success! No dependency issues found.
 
 ## Replicate Survey Results
 
@@ -55,7 +81,7 @@ Group 1 is the group of methods we used to conduct our survey. Group 2 are the a
 python3 compare_distortions.py
 ```
 
-**Note**: to run this script you'll need access to a bigger variant of our LASPEP dataset, which is available for download [here].(https://mega.nz/file/EMpEmRya#ccMaeFZtRtIICZBleZLlcZoyRga6pbGGFV8mQhsJeZQ).
+**Note**: to run this script you'll need access to a bigger variant of our LASPEP dataset, which is available for download [here](https://mega.nz/file/EMpEmRya#ccMaeFZtRtIICZBleZLlcZoyRga6pbGGFV8mQhsJeZQ).
 
 - Unzip the folder.
 - Place the folder in the ./data/ path.
@@ -75,13 +101,19 @@ python3 distortion_success_correlation.py
 
 The dataset described in the paper is available in
 
-./survey/data/
+./survey/data/perc_eval/
 
 and will be published in a individual-rating:image format in the near future.
 
 ## Attacks
 
 We conducted our experiments on a broad set of diverse adversarial attacks. Here are the commands to run them.
+
+(0) Prerequisite: make sure you have the Nips17 dataset in the datafolder, like so:
+
+```
+./data/nips17/
+```
 
 - [PGD](https://arxiv.org/pdf/1706.06083)
 - [VMIFGSM](https://openaccess.thecvf.com/content/CVPR2021/papers/Wang_Enhancing_the_Transferability_of_Adversarial_Attacks_Through_Variance_Tuning_CVPR_2021_paper.pdf)

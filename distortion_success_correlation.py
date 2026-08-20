@@ -325,9 +325,9 @@ def visualize_pred_displacement(info_dict, model_name):
 
 if __name__ == '__main__':
 
-    path_real_images = "./data/survey_images/images/"
-    path_adv_images = "./data/survey_images/"
-    mos_table = load_mos_table("./data/survey_images/mos_results_ci.csv")
+    path_real_images = "./survey/data/perc_eval/images/"
+    path_adv_images = "./survey/data/perc_eval/"
+    mos_table = load_mos_table("./survey/data/perc_eval/mos_results_ci.csv")
 
     dist_dict = {
 
