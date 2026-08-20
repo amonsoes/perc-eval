@@ -1,5 +1,5 @@
 """
-Creation of the PEAL2 (Perceptual Evaluation of Adversarial Samples bound by L2) Dataset:
+Creation of the LASPEP Dataset:
 
 Define L2 Ranges that reflect the Evaluation-Choices in the Survey:
 

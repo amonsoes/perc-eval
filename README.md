@@ -105,6 +105,23 @@ The dataset described in the paper is available in
 
 and will be published in a individual-rating:image format in the near future.
 
+
+## Replicate LASPEP data retrieval
+
+- Download ImageNet Validation Dataset. [Find Here](https://image-net.org/challenges/LSVRC/index.php)
+- Place ImageNet validation dataset in the ./data/ folder, rename it ext_nips17. Path:
+
+ ```
+ ./data/ext_nips17/
+ ```
+
+ - Run Data retrieval:
+
+ ```
+ python3 construct_laspep.py
+ ```
+
+
 ## Attacks
 
 We conducted our experiments on a broad set of diverse adversarial attacks. Here are the commands to run them.
