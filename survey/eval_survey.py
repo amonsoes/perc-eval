@@ -253,7 +253,7 @@ class DataProcessor:
 
         print(f'\n(4) average rating per image: {n_votes.mean()}')
         print(f'\n(5) rating number standard deviation: {n_votes.std()}')
-        print(f'\n(6) total number of ratings: {survey_stat_df["n_votes"].sum()}')
+        print(f'\n(6) total number of ratings: {survey_stat_df['n_votes'].sum()}')
 
         print("Summarized survey statistics per Image:\n")
 
@@ -956,11 +956,14 @@ class DataProcessor:
 
         print('\nComputing p-Level quantile from collected bootstraps for every metric..\n')
 
-        ci_at_percentile = {metric: {stat:(np.percentile(iter_vals, p_percentile)) for stat, iter_vals in iter_stats.items()} for metric, iter_stats in bootstrap_results.items()}
+        ci_at_percentile = {metric: {stat:((np.round(np.percentile(iter_vals, p_percentile), decimals=3))) for stat, iter_vals in iter_stats.items()} for metric, iter_stats in bootstrap_results.items()}
         #bootstrap_results = {'l2': {'plcc': [np.float64(0.86245), np.float64(0.85137), np.float64(0.86743), np.float64(0.86915), np.float64(0.86094), np.float64(0.85756), np.float64(0.83796), np.float64(0.85577), np.float64(0.85753), np.float64(0.84995), np.float64(0.84582)], 'srocc': [np.float64(0.83273), np.float64(0.82545), np.float64(0.84332), np.float64(0.83679), np.float64(0.83005), np.float64(0.82366), np.float64(0.82364), np.float64(0.82975), np.float64(0.8271), np.float64(0.80992), np.float64(0.8179)], 'or': [np.float64(0.08571), np.float64(0.11429), np.float64(0.11429), np.float64(0.07143), np.float64(0.05714), np.float64(0.1), np.float64(0.07143), np.float64(0.14286), np.float64(0.04286), np.float64(0.07143), np.float64(0.07143)]}, 'mad': {'plcc': [np.float64(0.85303), np.float64(0.84296), np.float64(0.83845), np.float64(0.8395), np.float64(0.84451), np.float64(0.84076), np.float64(0.82629), np.float64(0.84814), np.float64(0.84612), np.float64(0.82016), np.float64(0.82195)], 'srocc': [np.float64(0.8571), np.float64(0.85255), np.float64(0.8579), np.float64(0.85199), np.float64(0.85494), np.float64(0.84104), np.float64(0.83312), np.float64(0.85867), np.float64(0.85978), np.float64(0.82161), np.float64(0.83314)], 'or': [np.float64(0.08571), np.float64(0.12857), np.float64(0.11429), np.float64(0.12857), np.float64(0.07143), np.float64(0.1), np.float64(0.1), np.float64(0.12857), np.float64(0.07143), np.float64(0.07143), np.float64(0.05714)]}, 'ssim': {'plcc': [np.float64(0.86746), np.float64(0.86351), np.float64(0.87499), np.float64(0.87667), np.float64(0.87128), np.float64(0.82997), np.float64(0.81464), np.float64(0.84227), np.float64(0.86873), np.float64(0.82299), np.float64(0.82843)], 'srocc': [np.float64(0.83976), np.float64(0.84893), np.float64(0.85553), np.float64(0.85114), np.float64(0.84629), np.float64(0.8317), np.float64(0.83045), np.float64(0.84391), np.float64(0.84283), np.float64(0.81946), np.float64(0.82728)], 'or': [np.float64(0.05714), np.float64(0.08571), np.float64(0.1), np.float64(0.05714), np.float64(0.05714), np.float64(0.14286), np.float64(0.11429), np.float64(0.11429), np.float64(0.05714), np.float64(0.1), np.float64(0.1)]}, 'psnr': {'plcc': [np.float64(0.82563), np.float64(0.80299), np.float64(0.83303), np.float64(0.82602), np.float64(0.82009), np.float64(0.81434), np.float64(0.81251), np.float64(0.82311), np.float64(0.82842), np.float64(0.79849), np.float64(0.80025)], 'srocc': [np.float64(0.78801), np.float64(0.78069), np.float64(0.81159), np.float64(0.79263), np.float64(0.80408), np.float64(0.79244), np.float64(0.7613), np.float64(0.80795), np.float64(0.7934), np.float64(0.76403), np.float64(0.76912)], 'or': [np.float64(0.08571), np.float64(0.11429), np.float64(0.12857), np.float64(0.1), np.float64(0.07143), np.float64(0.1), np.float64(0.08571), np.float64(0.12857), np.float64(0.07143), np.float64(0.11429), np.float64(0.1)]}, 'ssim.1': {'plcc': [np.float64(0.87268), np.float64(0.87812), np.float64(0.87329), np.float64(0.87947), np.float64(0.87518), np.float64(0.87346), np.float64(0.87047), np.float64(0.86789), np.float64(0.87371), np.float64(0.86998), np.float64(0.86117)], 'srocc': [np.float64(0.82489), np.float64(0.85096), np.float64(0.83361), np.float64(0.84308), np.float64(0.8355), np.float64(0.84179), np.float64(0.83558), np.float64(0.83835), np.float64(0.82466), np.float64(0.82246), np.float64(0.8178)], 'or': [np.float64(0.04286), np.float64(0.05714), np.float64(0.08571), np.float64(0.07143), np.float64(0.04286), np.float64(0.07143), np.float64(0.07143), np.float64(0.11429), np.float64(0.05714), np.float64(0.05714), np.float64(0.05714)]}, 'vif': {'plcc': [np.float64(0.8527), np.float64(0.81735), np.float64(0.82883), np.float64(0.8278), np.float64(0.82871), np.float64(0.83729), np.float64(0.82205), np.float64(0.82606), np.float64(0.84167), np.float64(0.80906), np.float64(0.80678)], 'srocc': [np.float64(0.84423), np.float64(0.81908), np.float64(0.83131), np.float64(0.82144), np.float64(0.83237), np.float64(0.83331), np.float64(0.81545), np.float64(0.82855), np.float64(0.83066), np.float64(0.80957), np.float64(0.80372)], 'or': [np.float64(0.08571), np.float64(0.12857), np.float64(0.1), np.float64(0.08571), np.float64(0.05714), np.float64(0.1), np.float64(0.08571), np.float64(0.11429), np.float64(0.08571), np.float64(0.11429), np.float64(0.11429)]}, 'dists': {'plcc': [np.float64(0.87622), np.float64(0.85814), np.float64(0.87757), np.float64(0.87554), np.float64(0.87651), np.float64(0.87128), np.float64(0.86386), np.float64(0.87234), np.float64(0.8783), np.float64(0.86485), np.float64(0.85798)], 'srocc': [np.float64(0.87765), np.float64(0.86867), np.float64(0.88541), np.float64(0.86977), np.float64(0.88319), np.float64(0.88001), np.float64(0.86059), np.float64(0.87961), np.float64(0.87443), np.float64(0.85975), np.float64(0.86208)], 'or': [np.float64(0.07143), np.float64(0.07143), np.float64(0.11429), np.float64(0.07143), np.float64(0.05714), np.float64(0.07143), np.float64(0.04286), np.float64(0.11429), np.float64(0.07143), np.float64(0.07143), np.float64(0.07143)]}, 'lpips': {'plcc': [np.float64(0.61888), np.float64(0.57186), np.float64(0.62854), np.float64(0.61131), np.float64(0.60668), np.float64(0.59676), np.float64(0.59152), np.float64(0.60636), np.float64(0.59669), np.float64(0.57847), np.float64(0.57968)], 'srocc': [np.float64(0.59191), np.float64(0.53198), np.float64(0.58044), np.float64(0.55505), np.float64(0.56047), np.float64(0.54865), np.float64(0.53599), np.float64(0.56174), np.float64(0.55009), np.float64(0.52005), np.float64(0.52501)], 'or': [np.float64(0.18571), np.float64(0.24286), np.float64(0.22857), np.float64(0.17143), np.float64(0.18571), np.float64(0.2), np.float64(0.21429), np.float64(0.21429), np.float64(0.2), np.float64(0.21429), np.float64(0.21429)]}, 'ahiq': {'plcc': [np.float64(0.89362), np.float64(0.89879), np.float64(0.90088), np.float64(0.89589), np.float64(0.9115), np.float64(0.89861), np.float64(0.89634), np.float64(0.90147), np.float64(0.91056), np.float64(0.89587), np.float64(0.88922)], 'srocc': [np.float64(0.89898), np.float64(0.90306), np.float64(0.9015), np.float64(0.89674), np.float64(0.91072), np.float64(0.89763), np.float64(0.89285), np.float64(0.90185), np.float64(0.90277), np.float64(0.88423), np.float64(0.88938)], 'or': [np.float64(0.05714), np.float64(0.11429), np.float64(0.08571), np.float64(0.08571), np.float64(0.02857), np.float64(0.05714), np.float64(0.02857), np.float64(0.12857), np.float64(0.04286), np.float64(0.04286), np.float64(0.04286)]}, 'topiq_fr': {'plcc': [np.float64(0.77125), np.float64(0.74547), np.float64(0.65439), np.float64(0.6633), np.float64(0.67909), np.float64(0.64533), np.float64(0.6424), np.float64(0.64718), np.float64(0.64823), np.float64(0.65742), np.float64(0.57353)], 'srocc': [np.float64(0.78449), np.float64(0.82692), np.float64(0.80748), np.float64(0.79756), np.float64(0.80351), np.float64(0.80882), np.float64(0.77266), np.float64(0.80214), np.float64(0.77872), np.float64(0.78828), np.float64(0.75419)], 'or': [np.float64(0.11429), np.float64(0.14286), np.float64(0.17143), np.float64(0.14286), np.float64(0.11429), np.float64(0.14286), np.float64(0.1), np.float64(0.17143), np.float64(0.14286), np.float64(0.14286), np.float64(0.1)]}}
         bootstrap_results_df = pd.DataFrame(bootstrap_results)
         #ci_at_percentile = {'l2': {'plcc': np.array([0.8397285, 0.868763 ]), 'srocc': np.array([0.8117155 , 0.84185075]), 'or': np.array([0.046073  , 0.13643175])}, 'mad': {'plcc': np.array([0.82056275, 0.8476855 ]), 'srocc': np.array([0.82419975, 0.85953025]), 'or': np.array([0.06035525, 0.12857   ])}, 'ssim': {'plcc': np.array([0.81651875, 0.876292  ]), 'srocc': np.array([0.8212195 , 0.85454225]), 'or': np.array([0.05714   , 0.13643175])}, 'psnr': {'plcc': np.array([0.798886  , 0.83199275]), 'srocc': np.array([0.76191425, 0.810771  ]), 'or': np.array([0.07143, 0.12857])}, 'ssim.1': {'plcc': np.array([0.862682  , 0.87916625]), 'srocc': np.array([0.8188485, 0.849187 ]), 'or': np.array([0.046073 , 0.1078595])}, 'vif': {'plcc': np.array([0.807293 , 0.8406845]), 'srocc': np.array([0.80503625, 0.8330985 ]), 'or': np.array([0.06356825, 0.125357  ])}, 'dists': {'plcc': np.array([0.858016  , 0.87813575]), 'srocc': np.array([0.859939 , 0.8849105]), 'or': np.array([0.046073, 0.11429 ])}, 'lpips': {'plcc': np.array([0.57334725, 0.62466325]), 'srocc': np.array([0.521166 , 0.5762325]), 'or': np.array([0.174643  , 0.23964475])}, 'ahiq': {'plcc': np.array([0.89071625, 0.9112885 ]), 'srocc': np.array([0.88538875, 0.9089965 ]), 'or': np.array([0.02857 , 0.125357])}, 'topiq_fr': {'plcc': np.array([0.58902575, 0.7305345 ]), 'srocc': np.array([0.75834575, 0.8228475 ]), 'or': np.array([0.1    , 0.17143])}}
         ci_at_percentile = pd.DataFrame(ci_at_percentile)
+        print('Metric confidence intervals:\n')
+        print(ci_at_percentile)
+        (ci_at_percentile.T).to_csv("./survey_stats/CI_metrics.csv")
         print('Done.\n')
 
         ######################
@@ -1023,13 +1026,25 @@ class DataProcessor:
 
     def plot_metric_difference_ci(self, metric, targets, b_results_df, point_estimates, metric_order):
 
+        metric_order = metric_order[1:] # remove AHIQ 
+        #metric_order.remove('l2')
+
+        point_estimate_delta_plcc = point_estimates['ahiq'][0] - point_estimates[:].iloc[0]
+        point_estimate_delta_srocc = point_estimates['ahiq'][1] - point_estimates[:].iloc[1]
+        point_estimate_delta_or = point_estimates[:].iloc[3] - point_estimates['ahiq'][3]
+        point_estimate_delta = pd.concat((point_estimate_delta_plcc, point_estimate_delta_srocc, point_estimate_delta_or), axis=1).T
         delta_interval_dict = {}
+
         for target in targets:
             if target != metric:
                 delta_intervals = self.metric_ci_comparison(b_results_df, metric, target)
                 delta_interval_dict[target] = delta_intervals
+                #delta_interval_dict[target] = {k:(round(point_estimate_delta[target].iloc[n],3), v.round(3)) for (k,v), n in zip(delta_intervals.items(), [0, 1, 2])}
 
         delta_interval_df = pd.DataFrame(delta_interval_dict)
+        delta_interval_df.drop('l2', axis=1)
+        point_estimates.drop('l2', axis=1)
+        
 
         stat_2_int = {
                     'plcc':0,
@@ -1037,18 +1052,13 @@ class DataProcessor:
                     'or':3
                 }
 
-        point_estimate_delta_plcc = point_estimates['ahiq'][0] - point_estimates[:].iloc[0]
-        point_estimate_delta_srocc = point_estimates['ahiq'][1] - point_estimates[:].iloc[1]
-        point_estimate_delta_or = point_estimates[:].iloc[3] - point_estimates['ahiq'][3]
-        point_estimate_delta = pd.concat((point_estimate_delta_plcc, point_estimate_delta_srocc, point_estimate_delta_or), axis=1).T
-
         sns.set_theme(
             style="whitegrid",
             context="paper",
             font_scale=FONT_SCALE
         )
 
-        metric_order = metric_order[1:] # remove AHIQ
+
 
 
         y_positions = np.arange(len(metric_order))
@@ -1249,6 +1259,10 @@ class DataProcessor:
         confidence_intervals,
         metric_order
     ):
+
+        confidence_intervals.drop('l2', axis=1)
+        point_estimates.drop('l2', axis=1)
+        metric_order.remove('l2')
 
         stat_2_int = {
             'plcc':0,
