@@ -43,37 +43,40 @@ class FRQA:
     
     def __call__(self, x, x_adv, paths):
         """
-        x -> original images
-        x_adv -> adversarial images
+        x: clean reference images
+        x_adv: adversarial/distorted images
         """
 
-        assert len(x.shape) == 4
-        assert len(x_adv.shape) == 4
+        assert x.ndim == 4
+        assert x_adv.ndim == 4
 
         l2_score = self.get_l2(x, x_adv)
-        mad_score = self.mad(x, x_adv)
-        psnr_score = self.psnr(x, x_adv)
-        ssim_score = self.ssim(x, x_adv)
-        vif_score = self.vif(x, x_adv)
-        dists_score = self.dists(x, x_adv)
-        lpips_score = self.lpips(x, x_adv)
-        ahiq_score = self.ahiq(x, x_adv)
-        topiq_score = self.topiq(x, x_adv)
-        pie_app_score = self.pie_app(x, x_adv)
 
-        self.l2_scores.extend(l2_score)
-        self.mad_scores.extend(mad_score)
-        self.psnr_scores.extend(psnr_score)
-        self.ssim_scores.extend(ssim_score)
-        self.vif_scores.extend(vif_score)
-        self.dists_scores.extend(dists_score)
-        self.lpips_scores.extend(lpips_score)
-        self.ahiq_scores.extend(ahiq_score)
-        self.topiq_scores.extend(topiq_score)
-        self.pie_app_scores.extend(pie_app_score)
+        # pyiqa expects distorted/target first, reference second.
+        mad_score = self.mad(x_adv, x)
+        psnr_score = self.psnr(x_adv, x)
+        ssim_score = self.ssim(x_adv, x)
+        ms_ssim_score = self.ms_ssim(x_adv, x)
+        vif_score = self.vif(x_adv, x)
 
-        self.write_to_report(paths, l2_score, mad_score, psnr_score, ssim_score, vif_score,dists_score,lpips_score, ahiq_score, topiq_score, pie_app_score)
-        return [paths, l2_score, mad_score, psnr_score, ssim_score, vif_score,dists_score,lpips_score, ahiq_score, topiq_score, pie_app_score]
+        dists_score = self.dists(x_adv, x)
+        lpips_score = self.lpips(x_adv, x)
+        ahiq_score = self.ahiq(x_adv, x)
+        topiq_score = self.topiq(x_adv, x)
+
+        self.write_to_report(
+            paths,
+            l2_score,
+            mad_score,
+            psnr_score,
+            ssim_score,
+            ms_ssim_score,
+            vif_score,
+            dists_score,
+            lpips_score,
+            ahiq_score,
+            topiq_score,
+        )
 
 
     def write_to_report(self, 
