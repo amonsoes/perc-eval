@@ -1,0 +1,25 @@
+\begin{table*}[t]
+\centering
+\caption{Stability of out-of-fold predictions across repeated cross-validation partitions. PLCC, RMSE, and OR are reported as mean $\pm$ standard deviation across repetitions.}
+\label{tab:5pl_prediction_stability}
+\scriptsize
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccccccccc}
+\toprule
+Metric & PLCC & RMSE & OR & Mean PLCC rank & Ranked first & Mean $\sigma_{\hat{y}}$ & Median $\sigma_{\hat{y}}$ & Maximum $\sigma_{\hat{y}}$ & Mean prediction range & Out-of-range predictions (\%) \\
+\midrule
+TOPIQ-FR & $0.9037 \pm 0.0046$ & $0.1189 \pm 0.0027$ & $0.0501 \pm 0.0077$ & 1.07 & 93 & 0.0131 & 0.0121 & 0.0251 & 0.0686 & 0.00 \\
+MS-SSIM & $0.8946 \pm 0.0051$ & $0.1247 \pm 0.0031$ & $0.0551 \pm 0.0050$ & 1.94 & 7 & 0.0153 & 0.0137 & 0.0508 & 0.0773 & 1.66 \\
+MAD & $0.8798 \pm 0.0038$ & $0.1321 \pm 0.0020$ & $0.0163 \pm 0.0054$ & 3.21 & 0 & 0.0151 & 0.0129 & 0.0326 & 0.0770 & 0.04 \\
+VIF & $0.8761 \pm 0.0051$ & $0.1339 \pm 0.0026$ & $0.0541 \pm 0.0058$ & 3.84 & 0 & 0.0144 & 0.0125 & 0.0382 & 0.0721 & 0.00 \\
+LPIPS & $0.8649 \pm 0.0060$ & $0.1395 \pm 0.0030$ & $0.0716 \pm 0.0056$ & 5.46 & 0 & 0.0159 & 0.0146 & 0.0359 & 0.0857 & 1.47 \\
+PSNR & $0.8621 \pm 0.0055$ & $0.1407 \pm 0.0026$ & $0.0597 \pm 0.0062$ & 5.76 & 0 & 0.0136 & 0.0131 & 0.0312 & 0.0722 & 3.54 \\
+$L_2$ & $0.8557 \pm 0.0079$ & $0.1440 \pm 0.0039$ & $0.0803 \pm 0.0099$ & 6.87 & 0 & 0.0178 & 0.0150 & 0.0396 & 0.0961 & 3.06 \\
+DISTS & $0.8424 \pm 0.0067$ & $0.1497 \pm 0.0030$ & $0.0799 \pm 0.0095$ & 7.86 & 0 & 0.0164 & 0.0147 & 0.0385 & 0.0859 & 0.06 \\
+SSIM & $0.8257 \pm 0.0088$ & $0.1567 \pm 0.0036$ & $0.0771 \pm 0.0093$ & 8.99 & 0 & 0.0174 & 0.0155 & 0.0538 & 0.0949 & 0.01 \\
+AHIQ & $0.6353 \pm 0.0327$ & $0.2158 \pm 0.0120$ & $0.1676 \pm 0.0172$ & 10.00 & 0 & 0.0271 & 0.0228 & 0.2257 & 0.1514 & 0.20 \\
+\bottomrule
+\end{tabular}
+
+}
+\end{table*}

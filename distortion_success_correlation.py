@@ -115,7 +115,10 @@ def compute_prediction_displacement(model, clean_input, adv_input):
 
 def load_image(path, device='cpu'):
     image = Image.open(path).convert("RGB")
-    return normalize(to_tensor(image)).unsqueeze(0).to(device)
+    image = to_tensor(image)
+    normalized_image =  normalize(image).unsqueeze(0).to(device)
+    return image, normalized_image
+    
 
 attack_2_surrogate = {
     "pgdl2": "deit",
@@ -156,25 +159,23 @@ def get_prediction_displacement_for_surrogate(model_name):
             for pert_dist, ind in inds.items():
 
                 index = ind[0]
+                attack_pert = f'{attack}-{pert_dist}'
                 img_path = path_real_images + str(index) + ".png"
                 adv_img_path = path_adv_images + str(pert_dist) + "/" + attack + "/" + str(index) + ".png"
 
-                image = load_image(img_path)
-                adv_image = load_image(adv_img_path)
+                ori_image, image = load_image(img_path)
+                ori_adv_image, adv_image = load_image(adv_img_path)
 
                 prediction_discplacement = compute_prediction_displacement(model, image, adv_image)
 
-                file_table_entry = f"./data/survey/images/{str(index)}"
-
-                line_for_file = mos_table[mos_table["file"] == file_table_entry]
-                mos_value = line_for_file["MOS"]
-                ci_lower = line_for_file["ci_lower"]
-                ci_upper = line_for_file["ci_upper"]
-                prediction_discplacement['MOS'] = mos_value.item()
-                prediction_discplacement['ci_lower'] = ci_lower.item()
-                prediction_discplacement['ci_upper'] = ci_upper.item()
+                line_for_file = mos_table[mos_table["file_id"] == attack_pert]
+                mos_value = line_for_file["mos"]
+                prediction_discplacement['mos'] = mos_value.item()
                 prediction_discplacement['sample'] = str(index) + '.png'
-                prediction_discplacement['attack'] = attack
+                prediction_discplacement['attack']
+                prediction_discplacement['perturbation_group'] = pert_dist
+                prediction_discplacement['l2'] = (ori_image - ori_adv_image).pow(2).sum().sqrt().item()
+                prediction_discplacement['surrogate'] = model_name
                 sample_2_info[attack][str(pert_dist)] =  prediction_discplacement
 
     return sample_2_info
@@ -325,9 +326,9 @@ def visualize_pred_displacement(info_dict, model_name):
 
 if __name__ == '__main__':
 
-    path_real_images = "./survey/data/perc_eval/images/"
+    path_real_images = "./survey/data/perc_eval/images_new/"
     path_adv_images = "./survey/data/perc_eval/"
-    mos_table = load_mos_table("./survey/data/perc_eval/mos_results_ci.csv")
+    mos_table = load_mos_table("./survey/data/perc_eval/scores_and_mos.csv")
 
     dist_dict = {
 

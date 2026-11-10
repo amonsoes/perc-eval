@@ -4,58 +4,101 @@ import torch
 import matplotlib.pyplot as plt
 import os
 import math
+import torchvision
 import torchvision.transforms as T
 import numpy as np
 import pandas as pd
 import copy
 import seaborn as sns
 
-from scipy.optimize import curve_fit
-from scipy.stats import pearsonr, spearmanr, t
+from scipy.stats import pearsonr, spearmanr
+from statsmodels.stats.multitest import multipletests
+from tqdm import tqdm
+
 from process import DatasetConstructor
 from PIL import Image
-from sklearn.model_selection import KFold
-from scipy.special import expit
+from sklearn.model_selection import GroupKFold
 from pathlib import Path
+
+from validate_frqa import FRQA
+from metric_collection import MetricCollection
+from utils import FivePLFitError, build_votes_from_ratings
+from ci_analysis import CIAnalysis
 
 from bootstrap_checkpoint import save_bootstrap_checkpoint, load_bootstrap_checkpoint
 from advanced_survey_stats import repeated_split_half_reliability, summarize_split_half, participant_leave_one_out_consistency, summarize_participant_consistency
+
 
 
 RANDOM_SEED = 42
 RNG = np.random.default_rng(RANDOM_SEED)
 FONT_SCALE= 1.6
 TITLE_SIZE = 16
-CHECKPOINT_PATH = Path(
-    "./saves/bootstrap_iqa_checkpoint.pkl"
-)
-CHECKPOINT_EVERY = 25
-N_BOOTSTRAPS = 5000
 
-class FivePLFitError(RuntimeError):
-    """The 5PL model could not be fitted for a metric/fold."""
+BS_PART_CHECKPOINT_PATH = Path(
+    "./saves/participant_bootstrap_iqa_checkpoint.pkl"
+)
+
+BS_STIM_CHECKPOINT_PATH = Path(
+    "./saves/stimuli_bootstrap_iqa_checkpoint.pkl"
+)
+
+BS_CRS_CHECKPOINT_PATH = Path(
+    "./saves/crossed_bootstrap_iqa_checkpoint.pkl"
+)
+
+CHECKPOINT_EVERY = 20
+N_BOOTSTRAPS = 5000
+BEST_METRIC_HYPOTHESIS = 'topiq_fr' # post-hoc-hypothesis based on point estimates
+
+SIGNIFICANCE_LEVEL = 0.05
+
+# 1 if metric quantifies visual degredation (the higher the more perturbed) -1 if metric quantifies visual fidelity (inverted)
+METRIC_DIRECTION = {
+    "l2":        1,
+    "mad":       1,
+    "psnr":     -1,
+    "ssim":     -1,
+    "ms_ssim":  -1,
+    "vif":      -1,
+    "dists":     1,
+    "lpips":     1,
+    "ahiq":     -1,
+    "topiq_fr": -1,
+}
+
+##########################################################################################
+
+
+# DATACLASS SETUP
+
+
+##########################################################################################
+
 
 class DataProcessor:
 
-    def __init__(self):
+    def __init__(self, device):
         self.n = 0
-        self.iqa_root = './data/perc_eval/'
-        self.results_csv = self.iqa_root + 'mos_results.csv'
-        if os.path.exists(self.results_csv):
-            os.remove(self.results_csv)
-        with open(self.results_csv, 'w') as n_f:
-            csv_obj_new = csv.writer(n_f)
-            csv_obj_new.writerow(['file','l2',	'mad',	'ssim',	'psnr',	'ssim',	'vif',	'dists',	'lpips',	'ahiq',	'topiq_fr', 'MOS'])
+        self.iqa_root = Path('./data/perc_eval')
         self.attacks = ['pgdl2', 'vmifgsm', 'percal', 'sgd_uap', 'sparsesigmaattack', 'hpf_fgsm', 'square_attack', 'ppba', 'rcw', 'cgnc', 'cgsp', 'dim', 'bsr', 'sga_uap']
         self.votes = self.set_up_votes()
         self.to_tensor = T.ToTensor()
         self.dataset_contructor = DatasetConstructor()
+        self.frqa = FRQA(device=device)
+        self.convert_dtype = T.ConvertImageDtype(torch.float32)
         self.answer_to_value = {
-            '1': 0,
+            '1': 0, # -> no perceptible distortion
             '2': 0.25,
             '3': 0.5,
             '5': 0.75,
-            '6': 1
+            '6': 1 # -> very perturbed
+        }
+
+        self.stat_2_int = {
+            'plcc':0,
+            'srocc':1,
+            'or':3
         }
 
         self.display_names = {
@@ -204,6 +247,137 @@ class DataProcessor:
         self.maximum_l2 = math.log(38.0 + self.eps)
         self.minimum_l2 = math.log(0 + self.eps)
 
+
+    ##########################################################################################
+
+
+    # TOOLS, FUNCTIONS AND METRICS
+
+
+    ##########################################################################################
+
+    def convert_attack_l2_to_file(self, attack_l2):
+        attack, dist = attack_l2.split("-")
+        return self.dist_dict[attack][dist]
+
+    def log_minmax_l2(self, l2):
+        l2 = math.log(l2 + self.eps)
+        return (l2 - self.minimum_l2) / (self.maximum_l2 - self.minimum_l2)
+
+    def get_mos(self, file):
+        attack, pert_deg = self.file_2_inf[file.split('.')[0]]
+        path = self.iqa_root / pert_deg / attack / "iqa_report.csv"
+        with open(path, 'r') as f:
+            csv_obj = csv.reader(f)
+            for line in csv_obj:
+                if line[0] == f'./data/survey/images/{str(file)}':
+                    return float(line[-1])
+
+    def get_actual_distortion(self, file):
+        attack, pert_deg = self.file_2_inf[file.split('.')[0]]
+        path = self.iqa_root / pert_deg / attack / "iqa_report.csv"
+        with open(path, 'r') as f:
+            csv_obj = csv.reader(f)
+            for line in csv_obj:
+                if line[0] == f'./data/survey/images/{str(file)}':
+                    return line[1]
+
+    def remove_outliers(self):
+        self.participants_raw = self.participants.copy()
+
+        self.participants_flagged = self.identify_outlier_ratings(
+            self.participants_raw,
+            ol_threshold=3.0,
+        )
+
+        self.participants_clean = (
+            self.participants_flagged.loc[
+                ~self.participants_flagged["is_outlier"]
+            ]
+            .copy()
+            .reset_index(drop=True)
+        )
+
+    def identify_outlier_ratings(
+        self,
+        ratings,
+        image_col="file_id",
+        rating_col="rating",
+        ol_threshold=3.0,
+    ):
+        ratings = ratings.copy().reset_index(drop=True)
+
+        ratings["z_score"] = np.nan
+
+        for _, indices in ratings.groupby(
+            image_col,
+            sort=False,
+        ).groups.items():
+
+            values = ratings.loc[
+                indices,
+                rating_col,
+            ].to_numpy(dtype=float)
+
+            z_scores = np.asarray(
+                self.compute_z(values),
+                dtype=float,
+            )
+
+            if len(z_scores) != len(values):
+                raise ValueError(
+                    "compute_z returned an unexpected number of values."
+                )
+
+            ratings.loc[indices, "z_score"] = z_scores
+
+        ratings["is_outlier"] = (
+            ratings["z_score"] > ol_threshold
+        )
+
+        return ratings
+    
+    def compute_z(self, votes):
+        n = len(votes)
+        mu = sum(votes) / n
+        sigma = math.sqrt(sum([(vote - mu)**2 for vote in votes])/ (n-1))
+        z_scores = [abs(((vote - mu) / (sigma + self.eps))) for vote in votes]
+        return z_scores
+    
+    def norm_pearson_corr(self, x, y):
+        """
+        Compute the Pearson correlation coefficient between two images.
+        
+        Args:
+            img1, img2: torch.Tensor of shape (C, H, W) or (H, W).
+            
+        Returns:
+            Pearson correlation coefficient (scalar tensor).
+
+        1 -> perfect correlation
+        0.5 -> not correlated
+        0 -> perfect negative correlation
+
+        invert for this computation
+        """
+        x = x.flatten()
+        y = y.flatten()
+        
+        mean1, mean2 = x.mean(), y.mean()
+        std1, std2 = x.std(), y.std()
+        covariance = ((x - mean1) * (y - mean2)).mean()      
+        pearson_corr = covariance / (std1 * std2 + 1e-8)
+        return pearson_corr
+
+
+    ##########################################################################################
+
+
+    # PARTICIPANT CONSISTENCY, SPLIT-HALF SUMMARY
+
+
+    ##########################################################################################
+
     def survey_statistics(self):
         print("\n================= survey statistics ===================\n")
 
@@ -226,7 +400,9 @@ class DataProcessor:
         means = []
         stds = []
 
-        for attack, perts in self.votes.items():
+        votes = build_votes_from_ratings(self.participants_clean)
+
+        for attack, perts in votes.items():
             for pert, votes in perts.items():
                 votes = np.array(votes)
                 filepath = self.dist_dict[attack][pert]
@@ -249,11 +425,9 @@ class DataProcessor:
         survey_stat_df = pd.DataFrame(zip(filepaths, attacks, mags, n_votes, medians, means, stds), columns=['filepaths', 'attacks', 'magnitudes', 'n_votes', 'medians', 'means', 'STD'])
         survey_stat_df = survey_stat_df.sort_values(by='filepaths', ascending=True)
 
-
-
         print(f'\n(4) average rating per image: {n_votes.mean()}')
         print(f'\n(5) rating number standard deviation: {n_votes.std()}')
-        print(f'\n(6) total number of ratings: {survey_stat_df['n_votes'].sum()}')
+        print(f'\n(6) total number of ratings: {survey_stat_df["n_votes"].sum()}')
 
         print("Summarized survey statistics per Image:\n")
 
@@ -264,7 +438,7 @@ class DataProcessor:
 
         split_half_results = (
             repeated_split_half_reliability(
-                self.participants,
+                self.participants_clean,
                 participant_col="participant_id",
                 image_col="file_id",
                 rating_col="rating",
@@ -281,8 +455,6 @@ class DataProcessor:
         print("Summary of Repeated Split-Half Reliability computation:\n")
         print(summarized_split_half_results)
 
-
-
         participant_consistency = (
             participant_leave_one_out_consistency(
                 self.participants,
@@ -292,7 +464,6 @@ class DataProcessor:
                 minimum_images=17,
             )
         )
-
 
         participant_consistency_summary = (
             summarize_participant_consistency(
@@ -307,8 +478,16 @@ class DataProcessor:
                     
 
         print("\n====================================\n")
+
+
+    ##########################################################################################
+
+
+    # VOTE ANALYSIS AND MOS COMPUTATION
+
+
+    ##########################################################################################
     
-    ###### Step 1 : Process surveys into votes CSV, Calculate MOS and put the results in the iqa_reports of the dataset
     
     def create_file_csv(self):
         #if not os.path.exists('./data/perc_eval/images/images.csv'):
@@ -337,33 +516,37 @@ class DataProcessor:
         return votes
 
     def process_data(self, data_path):
-        self.participants = []
-        with open(data_path, 'r') as f:
-            csv_obj = csv.reader(f)
-            fields = next(csv_obj)
-            results_fields = fields[35:49] + fields[90:104]
-            pertmag_fields = fields[49:63] + fields[104:118]
-            for line in csv_obj:
-                is_desktop = True if int(line[63]) == 1 else False
-                if is_desktop:
-                    self.n += 1
-                    participant_id = line[0]
-                    results = line[35:49] + line[90:104]
-                    results_dict = {field: result for field, result in zip(results_fields, results)}
-                    if all(results):
-                        pert_mags_files = line[49:63] + line[104:118]
-                        pertmag_dict = {field: pertmag for field, pertmag in zip(pertmag_fields, pert_mags_files)}
-                        for e, (res_field, result)  in enumerate(results_dict.items()):
-                            pertmag_field = self.field_map[res_field]
-                            pert_mag_lst = pertmag_dict[pertmag_field].split(',')
-                            if all([x != 'undefined' for x in pert_mag_lst]):
-                                if len(pert_mag_lst) > 3:
-                                    pert_mag, _ , file, _, attack = pert_mag_lst
-                                else:
-                                    pert_mag, file, attack = pert_mag_lst
-                                self.votes[attack][pert_mag.split('.')[0] + '.0'].append(self.answer_to_value[result])
-                                self.participants.append((participant_id, '-'.join([attack, pert_mag.split('.')[0] + '.0']), self.answer_to_value[result]))
-        self.participants = pd.DataFrame(self.participants, columns=('participant_id', 'file_id', 'rating'))
+        if not os.path.exists("./participants.csv"):
+            self.participants = []
+            with open(data_path, 'r') as f:
+                csv_obj = csv.reader(f)
+                fields = next(csv_obj)
+                results_fields = fields[35:49] + fields[90:104]
+                pertmag_fields = fields[49:63] + fields[104:118]
+                for line in csv_obj:
+                    is_desktop = True if int(line[63]) == 1 else False
+                    if is_desktop:
+                        self.n += 1
+                        participant_id = line[0]
+                        results = line[35:49] + line[90:104]
+                        results_dict = {field: result for field, result in zip(results_fields, results)}
+                        if all(results):
+                            pert_mags_files = line[49:63] + line[104:118]
+                            pertmag_dict = {field: pertmag for field, pertmag in zip(pertmag_fields, pert_mags_files)}
+                            for e, (res_field, result)  in enumerate(results_dict.items()):
+                                pertmag_field = self.field_map[res_field]
+                                pert_mag_lst = pertmag_dict[pertmag_field].split(',')
+                                if all([x != 'undefined' for x in pert_mag_lst]):
+                                    if len(pert_mag_lst) > 3:
+                                        pert_mag, _ , file, _, attack = pert_mag_lst
+                                    else:
+                                        pert_mag, file, attack = pert_mag_lst
+                                    self.votes[attack][pert_mag.split('.')[0] + '.0'].append(self.answer_to_value[result])
+                                    self.participants.append((participant_id, '-'.join([attack, pert_mag.split('.')[0] + '.0']), self.answer_to_value[result]))
+            self.participants = pd.DataFrame(self.participants, columns=('participant_id', 'file_id', 'rating'))
+            self.participants.to_csv("./participants.csv")
+        else:
+            self.participants = pd.read_csv("./participants.csv")
 
     def ratings_to_long(self, data):
         data = data.copy()
@@ -428,123 +611,6 @@ class DataProcessor:
             ["participant_id", "pert_mag_file", "result"]
         ]
 
-
-    def resample_subjective_statistics(
-        self,
-        ratings,
-        rng,
-        participant_col="participant_id",
-        image_col="image_id",
-        rating_col="rating",
-    ):
-        participants = ratings[participant_col].unique()
-
-        participant_draw = rng.choice(
-            participants,
-            size=len(participants),
-            replace=True,
-        )
-
-        # Number of times each participant was selected
-        weights = (
-            pd.Series(participant_draw)
-            .value_counts()
-            .rename("bootstrap_weight")
-        )
-
-        sampled = ratings.merge(
-            weights,
-            left_on=participant_col,
-            right_index=True,
-            how="inner",
-        )
-
-        sampled["weighted_rating"] = (
-            sampled[rating_col]
-            * sampled["bootstrap_weight"]
-        )
-
-        sampled["weighted_squared_rating"] = (
-            sampled[rating_col] ** 2
-            * sampled["bootstrap_weight"]
-        )
-
-        statistics = (
-            sampled
-            .groupby(image_col)
-            .agg(
-                n_ratings=("bootstrap_weight", "sum"),
-                weighted_sum=("weighted_rating", "sum"),
-                weighted_squared_sum=(
-                    "weighted_squared_rating",
-                    "sum",
-                ),
-            )
-            .reset_index()
-        )
-
-        statistics["mos"] = (
-            statistics["weighted_sum"]
-            / statistics["n_ratings"]
-        )
-
-        # Sample variance of the resampled ratings
-        variance_numerator = (
-            statistics["weighted_squared_sum"]
-            - statistics["weighted_sum"] ** 2
-            / statistics["n_ratings"]
-        )
-
-        statistics["rating_variance"] = (
-            variance_numerator
-            / (statistics["n_ratings"] - 1)
-        ).clip(lower=0)
-
-        statistics["rating_std"] = np.sqrt(
-            statistics["rating_variance"]
-        )
-
-        return statistics[
-            [image_col, "mos", "rating_std", "n_ratings"]
-        ]
-    
-    def compute_mos_per_sample(self):
-        # TODO: change to MOS per image
-        file_2_id = {}
-        ig_stats_list = []
-        self.rm_outliers()
-        file_2_inf_keys = self.file_2_inf.keys()
-        with open(self.results_csv, 'a') as n_f:
-            csv_obj_new = csv.writer(n_f)
-            for file in range(280):
-                if str(file) in file_2_inf_keys:
-                    attack, pert_deg = self.file_2_inf[str(file)]
-                    file_path = f'./data/survey/images/{file}'
-                    file_2_id[file_path] = "-".join([attack,pert_deg])
-                    path = f'{self.iqa_root}{pert_deg}/{attack}/iqa_report.csv'
-                    with open(path, 'r+') as f:
-                        csv_obj = csv.reader(f)
-                        for line in csv_obj:
-                            if line[0] == file_path:
-                                self.l2_dict[attack][pert_deg] = float(line[1])
-                                mos = self.mos(self.votes[attack][pert_deg])
-                                ig_sigma = np.array(self.votes[attack][pert_deg]).std()
-                                if mos == -1:
-                                    mos = self.l2_to_mos(float(line[1]))
-                                ig_stats_list.append((file, mos, ig_sigma))
-                                line.append(mos)
-                                csv_obj_new.writerow(line)
-                                break
-        print('- MOS computed...')
-        self.results_df = pd.read_csv(self.results_csv)
-        mos_np = self.results_df.pop('MOS').to_numpy()
-        self.ig_stats_df = pd.DataFrame(ig_stats_list, columns=['File', 'MOS', 'STD'])
-        self.metric_collection = MetricCollection(mos_np, ig_statistics=self.ig_stats_df)
-        self.files_df = self.results_df['file']
-        self.results_df['file'] = self.results_df['file'].replace(file_2_id)
-        print('done')
-
-
     def l2_to_mos(self, l2):
         if l2 < 4.0:
             return 0.0
@@ -557,7 +623,6 @@ class DataProcessor:
         else:
             return 1
 
-    
     def mos(self, votes):
         if votes:
             mos = sum(votes) / len(votes)
@@ -565,34 +630,100 @@ class DataProcessor:
         else:
             return 0
 
+    def get_iqa_and_mos(self):
 
-    # Step 2: Compare MOS (which is now in the iqa report file) to the IQA methods. Use SROCC, PLCC, RMSE, OL
+        print('Compute IQA for stimuli...')
 
-    def compare_to_iqa(self, mos_scores, visualize=False):
-        results_df = self.results_df.copy(deep=True)
-        _ = results_df.pop('file') 
+        if not os.path.exists("./iqa_scores.csv"):
+            
+            file_2_inf_keys = self.file_2_inf.keys()
+            for file in tqdm(range(280)):
+                if str(file) in file_2_inf_keys:
+                    attack, pert_deg = self.file_2_inf[str(file)]
+                    file_path_adv = self.iqa_root / pert_deg / attack / f"{file}.png"
+                    file_path_ref = self.iqa_root / "images_new" / f"{file}.png"
 
-        rating_std = self.metric_collection.ig_statistics['STD'].to_numpy()
+                    target = self.convert_dtype(torchvision.io.read_image(file_path_adv)).unsqueeze(0)
+                    reference = self.convert_dtype(torchvision.io.read_image(file_path_ref)).unsqueeze(0)
 
-        results_df_transformed = results_df.apply(self.metric_collection.fit_and_transform, args=(mos_scores, visualize, True), raw=True, axis=0, result_type='broadcast')
-        metrics_df = results_df_transformed.apply(self.metric_collection, args=(mos_scores, rating_std), axis=0)
-        return metrics_df
-                    
-    def get_iqa_for_file(self, file, pert_mag, attack):
-        iqa_path = self.iqa_root + f'{pert_mag}/{attack}/iqa_report.csv'
-        with open(iqa_path, 'r') as f:
-            csv_obj = csv.reader(f)
-            for line in csv_obj:
-                if line[0].endswith(str(file)):
-                    return [float(i) for i in line[1:]]
+                    self.frqa.compute_iqa(target, reference, f"{attack}-{pert_deg}")
+
+            self.results_df = self.frqa.get_dataframe()
+                
+        else:
+            print("found IQA score csv file in root. Passing computation....")
+
+            self.results_df = self.frqa.load_dataframe()
+        
+        print('IQA retrieved.')
+
+        print('Compute MOS...')
+
+        self.remove_outliers()
+
+        self.original_subjective_statistics = self.original_subjective_statistics(
+            self.participants_clean
+        )
+
+        self.results_df.sort_values(by='file_id', inplace=True)
+
+        # read IQA-MOS tabel computed before
+        self.stimuli_df = pd.merge(self.results_df, self.original_subjective_statistics, on='file_id')
+        self.metric_collection = MetricCollection(image_stats=self.original_subjective_statistics)
+        self.files_df = self.results_df['file_id']
+
+        print('done')
+
+    
+    ##########################################################################################
+
+
+    # SUBJECTIVE RESAMPLING, STIMULI RESAMPLING, TWO-WAY CROSSED RESAMPLING PROCEDURES
+
+
+    ##########################################################################################
+
+    def verify_mos_consistency(
+        self,
+        ratings, #individual ratings
+        stimuli, # iqa results
+        file_col="file_id",
+        rating_col="rating",
+        mos_col="mos",
+        atol=1e-10,
+    ):
+        reconstructed = (
+            ratings.groupby(file_col)[rating_col]
+            .mean()
+            .rename("reconstructed_MOS")
+        )
+
+        comparison = (
+            stimuli[[file_col, mos_col]]
+            .set_index(file_col)
+            .join(reconstructed)
+        )
+
+        comparison["difference"] = (
+            comparison[mos_col]
+            - comparison["reconstructed_MOS"]
+        )
+
+        inconsistent = comparison.loc[
+            ~np.isclose(
+                comparison[mos_col],
+                comparison["reconstructed_MOS"],
+                atol=atol,
+            )
+        ]
+
+        if not inconsistent.empty:
+            raise ValueError(
+                "Participant ratings do not reproduce the original MOS:\n"
+                + inconsistent.to_string()
+            )
 
     def check_stats(self, point_estimates, bootstrap_results, checks):
-
-        stat_2_int = {
-            'plcc':0,
-            'srocc':1,
-            'or':3
-        }
 
         for metric, statistic in checks:
             values = np.asarray(
@@ -600,7 +731,7 @@ class DataProcessor:
                 dtype=float,
             )
 
-            point = point_estimates[metric][stat_2_int[statistic]]
+            point = point_estimates[metric][self.stat_2_int[statistic]]
             lower, upper = np.percentile(values, [2.5, 97.5])
 
             print(
@@ -617,7 +748,6 @@ class DataProcessor:
                     "maximum": values.max(),
                 },
             )
-
 
     def original_subjective_statistics(
         self,
@@ -662,6 +792,48 @@ class DataProcessor:
         resampled_mos = self.compute_weighted_mos(ratings, weights, participant_col, rating_col, image_col)
 
         return resampled_mos
+
+    def resample_stimuli_statistics(
+        self,
+        stimuli,
+        rng,
+        mos_col="MOS",
+        image_col="file",
+    ):
+        if stimuli[image_col].isna().any():
+            raise ValueError(f"{image_col} contains missing values.")
+
+        if stimuli[image_col].duplicated().any():
+            raise ValueError(
+                "Stimulus dataframe must contain exactly one row per stimulus."
+            )
+
+        if stimuli[mos_col].isna().any():
+            raise ValueError(f"{mos_col} contains missing values.")
+
+        n_stimuli = len(stimuli)
+
+        # Sample row positions with replacement.
+        draw_indices = rng.integers(
+            low=0,
+            high=n_stimuli,
+            size=n_stimuli,
+        )
+
+        # This retains the original column dtypes.
+        stimuli_draw_df = (
+            stimuli.iloc[draw_indices]
+            .copy()
+            .reset_index(drop=True)
+        )
+
+        weights = (
+            stimuli_draw_df[image_col]
+            .value_counts(sort=False)
+            .rename("bootstrap_weight")
+        )
+
+        return stimuli_draw_df, weights
 
     
     def compute_weighted_mos(self, ratings, weights, participant_col, rating_col, image_col):
@@ -722,44 +894,431 @@ class DataProcessor:
             [image_col, "mos", "rating_std", "n_ratings"]
         ]
 
-    def calculate_statistics(
-        self,
-        data,
-        metric,
-        mos_col="mos",
-        std_col="rating_std",
-    ):
-        predicted_mos = data[metric].to_numpy(dtype=float)
-        mos = data[mos_col].to_numpy(dtype=float)
-        rating_std = data[std_col].to_numpy(dtype=float)
 
-        if not (
-            predicted_mos.shape
-            == mos.shape
-            == rating_std.shape
+    def resample_stimuli_statistics(
+            self,
+            ratings,
+            rng,
+            participant_col="participant_id",
+            image_col="image_id",
+            rating_col="rating",
         ):
-            raise ValueError("Input arrays have different shapes.")
+            participants = ratings[participant_col].unique()
 
-        plcc = pearsonr(predicted_mos, mos).statistic
-        srocc = spearmanr(predicted_mos, mos).statistic
+            participant_draw = rng.choice(
+                participants,
+                size=len(participants),
+                replace=True,
+            )
 
-        # Fezza/legacy IQA definition
-        is_outlier = (
-            np.abs(predicted_mos - mos)
-            > 2.0 * rating_std
+            # Number of times each participant was selected
+            weights = (
+                pd.Series(participant_draw)
+                .value_counts()
+                .rename("bootstrap_weight")
+            )
+
+            sampled = ratings.merge(
+                weights,
+                left_on=participant_col,
+                right_index=True,
+                how="inner",
+            )
+
+            sampled["weighted_rating"] = (
+                sampled[rating_col]
+                * sampled["bootstrap_weight"]
+            )
+
+            sampled["weighted_squared_rating"] = (
+                sampled[rating_col] ** 2
+                * sampled["bootstrap_weight"]
+            )
+
+            statistics = (
+                sampled
+                .groupby(image_col)
+                .agg(
+                    n_ratings=("bootstrap_weight", "sum"),
+                    weighted_sum=("weighted_rating", "sum"),
+                    weighted_squared_sum=(
+                        "weighted_squared_rating",
+                        "sum",
+                    ),
+                )
+                .reset_index()
+            )
+
+            statistics["mos"] = (
+                statistics["weighted_sum"]
+                / statistics["n_ratings"]
+            )
+
+            # Sample variance of the resampled ratings
+            variance_numerator = (
+                statistics["weighted_squared_sum"]
+                - statistics["weighted_sum"] ** 2
+                / statistics["n_ratings"]
+            )
+
+            statistics["rating_variance"] = (
+                variance_numerator
+                / (statistics["n_ratings"] - 1)
+            ).clip(lower=0)
+
+            statistics["rating_std"] = np.sqrt(
+                statistics["rating_variance"]
+            )
+
+            return statistics[
+                [image_col, "mos", "rating_std", "n_ratings"]
+            ]
+
+    def resample_subjective_statistics(
+        self,
+        ratings,
+        rng,
+        participant_col="participant_id",
+        image_col="image_id",
+        rating_col="rating",
+    ):
+        participants = ratings[participant_col].unique()
+
+        participant_draw = rng.choice(
+            participants,
+            size=len(participants),
+            replace=True,
         )
 
-        outlier_ratio = is_outlier.mean()
+        # Number of times each participant was selected
+        weights = (
+            pd.Series(participant_draw)
+            .value_counts()
+            .rename("bootstrap_weight")
+        )
 
-        return plcc, srocc, outlier_ratio
+        sampled = ratings.merge(
+            weights,
+            left_on=participant_col,
+            right_index=True,
+            how="inner",
+        )
 
-    def bootstrap_iqa_comparison(
+        sampled["weighted_rating"] = (
+            sampled[rating_col]
+            * sampled["bootstrap_weight"]
+        )
+
+        sampled["weighted_squared_rating"] = (
+            sampled[rating_col] ** 2
+            * sampled["bootstrap_weight"]
+        )
+
+        statistics = (
+            sampled
+            .groupby(image_col)
+            .agg(
+                n_ratings=("bootstrap_weight", "sum"),
+                weighted_sum=("weighted_rating", "sum"),
+                weighted_squared_sum=(
+                    "weighted_squared_rating",
+                    "sum",
+                ),
+            )
+            .reset_index()
+        )
+
+        statistics["mos"] = (
+            statistics["weighted_sum"]
+            / statistics["n_ratings"]
+        )
+
+        # Sample variance of the resampled ratings
+        variance_numerator = (
+            statistics["weighted_squared_sum"]
+            - statistics["weighted_sum"] ** 2
+            / statistics["n_ratings"]
+        )
+
+        statistics["rating_variance"] = (
+            variance_numerator
+            / (statistics["n_ratings"] - 1)
+        ).clip(lower=0)
+
+        statistics["rating_std"] = np.sqrt(
+            statistics["rating_variance"]
+        )
+
+        return statistics[
+            [image_col, "mos", "rating_std", "n_ratings"]
+        ]
+
+    def resample_crossed_statistics(
+        self,
+        ratings,
+        stimuli,
+        rng,
+        participant_col="participant_id",
+        file_col="file_id",
+        rating_col="rating",
+        mos_col="mos",
+    ):
+        """
+        Independently resample participants and stimuli.
+
+        ratings:
+            Cleaned participant-level table with one row per observed
+            participant-stimulus rating.
+
+        stimuli:
+            One row per stimulus containing the IQA scores and original MOS.
+
+        Returns:
+            An expanded stimulus-level bootstrap sample. Repeated rows
+            represent stimulus bootstrap multiplicities, and MOS is
+            recomputed using participant bootstrap multiplicities.
+        """
+
+        if stimuli[file_col].duplicated().any():
+            raise ValueError("Expected one row per stimulus.")
+
+        participants = ratings[participant_col].unique()
+        stimulus_ids = stimuli[file_col].to_numpy()
+
+        n_participants = len(participants)
+        n_stimuli = len(stimulus_ids)
+
+        # ---------------------------------------------------------
+        # 1. Resample participants as clusters
+        # ---------------------------------------------------------
+        participant_draw = rng.choice(
+            participants,
+            size=n_participants,
+            replace=True,
+        )
+
+        participant_weights = (
+            pd.Series(participant_draw)
+            .value_counts(sort=False)
+            .rename("participant_weight")
+            .rename_axis(participant_col)
+            .reset_index()
+        )
+
+        # A participant drawn k times contributes all their ratings k times.
+        weighted_ratings = ratings.merge(
+            participant_weights,
+            on=participant_col,
+            how="inner",
+            validate="many_to_one",
+        )
+
+        weighted_ratings["weighted_rating"] = (
+            weighted_ratings[rating_col]
+            * weighted_ratings["participant_weight"]
+        )
+
+        # ---------------------------------------------------------
+        # 2. Recompute MOS from resampled participants
+        # ---------------------------------------------------------
+        bootstrap_mos = (
+            weighted_ratings
+            .groupby(file_col)
+            .agg(
+                weighted_rating_sum=("weighted_rating", "sum"),
+                participant_weight_sum=("participant_weight", "sum"),
+            )
+        )
+
+        bootstrap_mos[mos_col] = (
+            bootstrap_mos["weighted_rating_sum"]
+            / bootstrap_mos["participant_weight_sum"]
+        )
+
+        bootstrap_mos = bootstrap_mos[mos_col]
+
+        # ---------------------------------------------------------
+        # 3. Independently resample stimuli
+        # ---------------------------------------------------------
+        stimulus_draw = rng.choice(
+            stimulus_ids,
+            size=n_stimuli,
+            replace=True,
+        )
+
+        # Expanding the dataframe makes repeated stimuli function as
+        # bootstrap weights.
+        bootstrap_sample = (
+            stimuli
+            .set_index(file_col)
+            .loc[stimulus_draw]
+            .reset_index()
+            .copy()
+        )
+
+        # Preserve the fixed original MOS for diagnostics.
+        bootstrap_sample["original_MOS"] = bootstrap_sample[mos_col]
+
+        # Replace it with the participant-resampled MOS.
+        bootstrap_sample[mos_col] = (
+            bootstrap_sample[file_col]
+            .map(bootstrap_mos)
+        )
+
+        if bootstrap_sample[mos_col].isna().any():
+            missing = bootstrap_sample.loc[
+                bootstrap_sample[mos_col].isna(),
+                file_col,
+            ].unique()
+
+            raise RuntimeError(
+                "No selected participant rated the following selected "
+                f"stimuli: {missing.tolist()}"
+            )
+
+        # Unique identifier for each of the 70 bootstrap draws.
+        bootstrap_sample["bootstrap_draw"] = np.arange(n_stimuli)
+
+        stimulus_weights = (
+            pd.Series(stimulus_draw)
+            .value_counts(sort=False)
+            .rename("stimulus_weight")
+        )
+
+        return (bootstrap_sample, participant_weights, stimulus_weights)
+
+    def identity_bootstrap_test(self, ratings_long, original_mos, participant_col, image_col, rating_col):
+        participant_ids = ratings_long["participant_id"].unique()
+
+        identity_weights = pd.Series(
+            1,
+            index=participant_ids,
+            name="bootstrap_weight",
+        )
+
+        identity_mos = self.compute_weighted_mos(
+            ratings_long,
+            identity_weights,
+            participant_col=participant_col,
+            rating_col=rating_col,
+            image_col=image_col
+        ).sort_index()
+
+        original_mos = original_mos.sort_index()
+
+        is_identity = np.testing.assert_allclose(
+            identity_mos['mos'].to_numpy(),
+            original_mos['mos'].to_numpy(),
+            rtol=0,
+            atol=1e-12,
+        )
+
+        return True if is_identity is None else False
+
+
+    def compute_pvalue_from_bs(
+            self,
+            point_estimates,
+            bs_delta_arrays,
+    ):
+        p_values_iqa_difference = {metric: {criterion: 0.0 for criterion in ['plcc', 'srocc', 'or']} for metric in bs_delta_arrays.keys()}
+
+        for metric, bootstrap_p_metric in bs_delta_arrays.items():
+            for criterion in ['plcc', 'srocc', 'or']:
+                bootstrap_list = bootstrap_p_metric[criterion]
+                observed_val = point_estimates[metric].loc[self.stat_2_int[criterion]]
+                p_value = DataProcessor.bootstrap_pvalue(observed=observed_val, bootstrap_estimates=bootstrap_list)
+                p_values_iqa_difference[metric][criterion] = p_value
+
+        return pd.DataFrame(p_values_iqa_difference)
+
+
+    @staticmethod
+    def bootstrap_pvalue(
+        observed,
+        bootstrap_estimates,
+        null_value=0.0,
+        alternative="two-sided",
+    ):
+        bootstrap_estimates = np.asarray(bootstrap_estimates)
+
+        # Approximate sampling distribution under H0.
+        null_distribution = bootstrap_estimates - observed
+        observed_distance = observed - null_value
+
+        if alternative == "two-sided":
+            extreme = (
+                np.abs(null_distribution)
+                >= abs(observed_distance)
+            )
+
+        elif alternative == "greater":
+            extreme = null_distribution >= observed_distance
+
+        elif alternative == "less":
+            extreme = null_distribution <= observed_distance
+
+        else:
+            raise ValueError(
+                "alternative must be 'two-sided', 'greater', or 'less'"
+            )
+
+        return (extreme.sum() + 1) / (len(bootstrap_estimates) + 1)
+
+    def get_original_statistics(
+            self,
+            visualize,
+
+    ):
+        # get original MOS, IG-STD, POINT ESTIMATES
+        point_estimates = self.compare_to_iqa(
+            original_mos=self.original_subjective_statistics, 
+            visualize=visualize
+            )
+
+        
+        print('\nOBTAINED POINT ESTIMATES ON ORIGINAL MOS DATA:\n')
+        print(point_estimates)
+
+        self.verify_mos_consistency(ratings=self.participants_clean, stimuli=self.stimuli_df)
+
+        # get Freq, Lum Pearson on original MOS, Point Esimates
+        frequency_point_estimates = self.get_freq_correlations(
+            self.results_df.copy(deep=True), 
+            self.original_subjective_statistics, 
+            is_original_mos=True
+            )
+        
+        lum_point_estimates = self.get_color_lum_correlations(
+            self.results_df.copy(deep=True), 
+            self.original_subjective_statistics, 
+            is_original_mos=True
+            )
+
+        metric_order = sorted(
+            point_estimates,
+            key=lambda metric: point_estimates[
+                metric
+            ].iloc[1],
+            reverse=True,
+        )
+
+        return {
+            "point_estimates": point_estimates,
+            "frequency_point_estimates": frequency_point_estimates,
+            "lum_point_estimates": lum_point_estimates,
+            "metric_order": metric_order
+        }
+
+            
+
+    def participant_wise_bootstrap_iqa_comparison(
         self,
         n_bootstrap=N_BOOTSTRAPS,
         participant_col="participant_id",
         image_col="file_id",
         rating_col="rating",
-        p_value = 0.05,
+        alpha_value = SIGNIFICANCE_LEVEL,
         visualize=False
     ):
 
@@ -775,41 +1334,21 @@ class DataProcessor:
         }
 
         # lower and upper percentile according to the p-value
-        p_percentile = [(p_value*100) / 2, 100 - (p_value*100) / 2]
+        p_percentile = [(alpha_value*100) / 2, 100 - (alpha_value*100) / 2]
         
-        # get original MOS, IG-STD, POINT ESTIMATES
-        original_mos = self.original_subjective_statistics(self.participants)
-        point_estimates = self.transform_iqa_with_bs_mos(self.results_df.copy(deep=True), original_mos, visualize=visualize, is_original_mos=True)
+        # get original POINT ESTIMATES
+        original_stats = self.get_original_statistics(visualize=visualize)
+        point_estimates = original_stats["point_estimates"]
+        point_estimate_plcc_freq, point_estimate_srocc_freq, freq_comps, freq_diffs = original_stats["frequency_point_estimates"]
+        point_estimate_plcc_lum, point_estimate_srocc_lum, y_comps, y_diffs = original_stats["frequency_point_estimates"]
+        metric_order = original_stats["metric_order"]
+
         print('\nOBTAINED POINT ESTIMATES ON ORIGINAL MOS DATA:\n')
         print(point_estimates)
 
-        # get Freq, Lum Pearson on original MOS
-        point_estimate_plcc_freq, point_estimate_srocc_freq, freq_comps, freq_diffs = self.get_freq_correlations(
-            self.results_df.copy(deep=True), 
-            original_mos, 
-            is_original_mos=True
-            )
-        
-        
-        point_estimate_plcc_lum, point_estimate_srocc_lum, y_comps, y_diffs = self.get_color_lum_correlations(
-            self.results_df.copy(deep=True), 
-            original_mos, 
-            is_original_mos=True
-            )
-
-        #point_estimates = pd.DataFrame({'l2': {0: 0.86245, 1: 0.83273, 2: 1.17704, 3: 0.08571, 4: 0.0, 5: 0.0}, 'mad': {0: 0.85303, 1: 0.8571, 2: 1.21233, 3: 0.08571, 4: 0.0, 5: 0.0}, 'ssim': {0: 0.86746, 1: 0.83976, 2: 1.15637, 3: 0.05714, 4: 0.0, 5: 0.0}, 'psnr': {0: 0.82563, 1: 0.78801, 2: 1.3115, 3: 0.08571, 4: 0.0, 5: 0.0}, 'ssim.1': {0: 0.87268, 1: 0.82489, 2: 1.13454, 3: 0.04286, 4: 0.0, 5: 0.0}, 'vif': {0: 0.8527, 1: 0.84423, 2: 1.21413, 3: 0.08571, 4: 0.0, 5: 0.0}, 'dists': {0: 0.87622, 1: 0.87765, 2: 1.11966, 3: 0.07143, 4: 0.0, 5: 0.0}, 'lpips': {0: 0.61888, 1: 0.59191, 2: 1.83419, 3: 0.18571, 4: 0.0, 5: 0.0}, 'ahiq': {0: 0.89362, 1: 0.89898, 2: 1.04497, 3: 0.05714, 4: 0.0, 5: 0.0}, 'topiq_fr': {0: 0.77125, 1: 0.78449, 2: 1.48062, 3: 0.11429, 4: 0.0, 5: 0.0}})
-
-        metric_order = sorted(
-            point_estimates,
-            key=lambda metric: point_estimates[
-                metric
-            ].iloc[1],
-            reverse=True,
-        )
-
-        if CHECKPOINT_PATH.exists():
+        if BS_PART_CHECKPOINT_PATH.exists():
             state = load_bootstrap_checkpoint(
-                CHECKPOINT_PATH,
+                BS_PART_CHECKPOINT_PATH,
                 RNG,
             )
 
@@ -858,7 +1397,7 @@ class DataProcessor:
             print('\nIdentity check of participant weighting in resampling algorithm...\n')
 
             is_identity = self.identity_bootstrap_test(self.participants, 
-                                        original_mos, 
+                                        self.original_subjective_statistics, 
                                         participant_col=participant_col, 
                                         image_col=image_col, 
                                         rating_col=rating_col,)
@@ -900,7 +1439,13 @@ class DataProcessor:
                 # transform metric with resampled MOS data and compute PLCC,SROCC,OR
 
                 metric_df_for_bs_mos = self.results_df.copy(deep=True)
-                stats_on_transformed_metrics = self.transform_iqa_with_bs_mos(metric_df_for_bs_mos, bootstrapped_mos_data, visualize, is_original_mos=False)
+                stats_on_transformed_metrics, folds = self.transform_iqa_with_bs_mos(
+                    metric_df_for_bs_mos, 
+                    bootstrapped_mos_data, 
+                    visualize, 
+                    is_original_mos=False, 
+                    kfold_grouping=False
+                )
 
                 for e, metric in enumerate(bootstrap_results.keys()):
                     bootstrap_results[metric]['plcc'].append(stats_on_transformed_metrics.iloc[0,e])
@@ -923,7 +1468,7 @@ class DataProcessor:
 
                 if completed % CHECKPOINT_EVERY == 0:
                     save_bootstrap_checkpoint(
-                        CHECKPOINT_PATH,
+                        BS_PART_CHECKPOINT_PATH,
                         completed=completed,
                         attempts=attempts,
                         n_bootstrap=n_bootstrap,
@@ -954,12 +1499,14 @@ class DataProcessor:
                 )
                 continue
 
-        print('\nComputing p-Level quantile from collected bootstraps for every metric..\n')
+        print('\nComputing alpha-Level quantile from collected bootstraps for every metric..\n')
+
+
+        p_values_iqa_difference = self.compute_pvalue_from_bs(point_estimates=point_estimates, bootstrap_results=bootstrap_results)
+
 
         ci_at_percentile = {metric: {stat:((np.round(np.percentile(iter_vals, p_percentile), decimals=3))) for stat, iter_vals in iter_stats.items()} for metric, iter_stats in bootstrap_results.items()}
-        #bootstrap_results = {'l2': {'plcc': [np.float64(0.86245), np.float64(0.85137), np.float64(0.86743), np.float64(0.86915), np.float64(0.86094), np.float64(0.85756), np.float64(0.83796), np.float64(0.85577), np.float64(0.85753), np.float64(0.84995), np.float64(0.84582)], 'srocc': [np.float64(0.83273), np.float64(0.82545), np.float64(0.84332), np.float64(0.83679), np.float64(0.83005), np.float64(0.82366), np.float64(0.82364), np.float64(0.82975), np.float64(0.8271), np.float64(0.80992), np.float64(0.8179)], 'or': [np.float64(0.08571), np.float64(0.11429), np.float64(0.11429), np.float64(0.07143), np.float64(0.05714), np.float64(0.1), np.float64(0.07143), np.float64(0.14286), np.float64(0.04286), np.float64(0.07143), np.float64(0.07143)]}, 'mad': {'plcc': [np.float64(0.85303), np.float64(0.84296), np.float64(0.83845), np.float64(0.8395), np.float64(0.84451), np.float64(0.84076), np.float64(0.82629), np.float64(0.84814), np.float64(0.84612), np.float64(0.82016), np.float64(0.82195)], 'srocc': [np.float64(0.8571), np.float64(0.85255), np.float64(0.8579), np.float64(0.85199), np.float64(0.85494), np.float64(0.84104), np.float64(0.83312), np.float64(0.85867), np.float64(0.85978), np.float64(0.82161), np.float64(0.83314)], 'or': [np.float64(0.08571), np.float64(0.12857), np.float64(0.11429), np.float64(0.12857), np.float64(0.07143), np.float64(0.1), np.float64(0.1), np.float64(0.12857), np.float64(0.07143), np.float64(0.07143), np.float64(0.05714)]}, 'ssim': {'plcc': [np.float64(0.86746), np.float64(0.86351), np.float64(0.87499), np.float64(0.87667), np.float64(0.87128), np.float64(0.82997), np.float64(0.81464), np.float64(0.84227), np.float64(0.86873), np.float64(0.82299), np.float64(0.82843)], 'srocc': [np.float64(0.83976), np.float64(0.84893), np.float64(0.85553), np.float64(0.85114), np.float64(0.84629), np.float64(0.8317), np.float64(0.83045), np.float64(0.84391), np.float64(0.84283), np.float64(0.81946), np.float64(0.82728)], 'or': [np.float64(0.05714), np.float64(0.08571), np.float64(0.1), np.float64(0.05714), np.float64(0.05714), np.float64(0.14286), np.float64(0.11429), np.float64(0.11429), np.float64(0.05714), np.float64(0.1), np.float64(0.1)]}, 'psnr': {'plcc': [np.float64(0.82563), np.float64(0.80299), np.float64(0.83303), np.float64(0.82602), np.float64(0.82009), np.float64(0.81434), np.float64(0.81251), np.float64(0.82311), np.float64(0.82842), np.float64(0.79849), np.float64(0.80025)], 'srocc': [np.float64(0.78801), np.float64(0.78069), np.float64(0.81159), np.float64(0.79263), np.float64(0.80408), np.float64(0.79244), np.float64(0.7613), np.float64(0.80795), np.float64(0.7934), np.float64(0.76403), np.float64(0.76912)], 'or': [np.float64(0.08571), np.float64(0.11429), np.float64(0.12857), np.float64(0.1), np.float64(0.07143), np.float64(0.1), np.float64(0.08571), np.float64(0.12857), np.float64(0.07143), np.float64(0.11429), np.float64(0.1)]}, 'ssim.1': {'plcc': [np.float64(0.87268), np.float64(0.87812), np.float64(0.87329), np.float64(0.87947), np.float64(0.87518), np.float64(0.87346), np.float64(0.87047), np.float64(0.86789), np.float64(0.87371), np.float64(0.86998), np.float64(0.86117)], 'srocc': [np.float64(0.82489), np.float64(0.85096), np.float64(0.83361), np.float64(0.84308), np.float64(0.8355), np.float64(0.84179), np.float64(0.83558), np.float64(0.83835), np.float64(0.82466), np.float64(0.82246), np.float64(0.8178)], 'or': [np.float64(0.04286), np.float64(0.05714), np.float64(0.08571), np.float64(0.07143), np.float64(0.04286), np.float64(0.07143), np.float64(0.07143), np.float64(0.11429), np.float64(0.05714), np.float64(0.05714), np.float64(0.05714)]}, 'vif': {'plcc': [np.float64(0.8527), np.float64(0.81735), np.float64(0.82883), np.float64(0.8278), np.float64(0.82871), np.float64(0.83729), np.float64(0.82205), np.float64(0.82606), np.float64(0.84167), np.float64(0.80906), np.float64(0.80678)], 'srocc': [np.float64(0.84423), np.float64(0.81908), np.float64(0.83131), np.float64(0.82144), np.float64(0.83237), np.float64(0.83331), np.float64(0.81545), np.float64(0.82855), np.float64(0.83066), np.float64(0.80957), np.float64(0.80372)], 'or': [np.float64(0.08571), np.float64(0.12857), np.float64(0.1), np.float64(0.08571), np.float64(0.05714), np.float64(0.1), np.float64(0.08571), np.float64(0.11429), np.float64(0.08571), np.float64(0.11429), np.float64(0.11429)]}, 'dists': {'plcc': [np.float64(0.87622), np.float64(0.85814), np.float64(0.87757), np.float64(0.87554), np.float64(0.87651), np.float64(0.87128), np.float64(0.86386), np.float64(0.87234), np.float64(0.8783), np.float64(0.86485), np.float64(0.85798)], 'srocc': [np.float64(0.87765), np.float64(0.86867), np.float64(0.88541), np.float64(0.86977), np.float64(0.88319), np.float64(0.88001), np.float64(0.86059), np.float64(0.87961), np.float64(0.87443), np.float64(0.85975), np.float64(0.86208)], 'or': [np.float64(0.07143), np.float64(0.07143), np.float64(0.11429), np.float64(0.07143), np.float64(0.05714), np.float64(0.07143), np.float64(0.04286), np.float64(0.11429), np.float64(0.07143), np.float64(0.07143), np.float64(0.07143)]}, 'lpips': {'plcc': [np.float64(0.61888), np.float64(0.57186), np.float64(0.62854), np.float64(0.61131), np.float64(0.60668), np.float64(0.59676), np.float64(0.59152), np.float64(0.60636), np.float64(0.59669), np.float64(0.57847), np.float64(0.57968)], 'srocc': [np.float64(0.59191), np.float64(0.53198), np.float64(0.58044), np.float64(0.55505), np.float64(0.56047), np.float64(0.54865), np.float64(0.53599), np.float64(0.56174), np.float64(0.55009), np.float64(0.52005), np.float64(0.52501)], 'or': [np.float64(0.18571), np.float64(0.24286), np.float64(0.22857), np.float64(0.17143), np.float64(0.18571), np.float64(0.2), np.float64(0.21429), np.float64(0.21429), np.float64(0.2), np.float64(0.21429), np.float64(0.21429)]}, 'ahiq': {'plcc': [np.float64(0.89362), np.float64(0.89879), np.float64(0.90088), np.float64(0.89589), np.float64(0.9115), np.float64(0.89861), np.float64(0.89634), np.float64(0.90147), np.float64(0.91056), np.float64(0.89587), np.float64(0.88922)], 'srocc': [np.float64(0.89898), np.float64(0.90306), np.float64(0.9015), np.float64(0.89674), np.float64(0.91072), np.float64(0.89763), np.float64(0.89285), np.float64(0.90185), np.float64(0.90277), np.float64(0.88423), np.float64(0.88938)], 'or': [np.float64(0.05714), np.float64(0.11429), np.float64(0.08571), np.float64(0.08571), np.float64(0.02857), np.float64(0.05714), np.float64(0.02857), np.float64(0.12857), np.float64(0.04286), np.float64(0.04286), np.float64(0.04286)]}, 'topiq_fr': {'plcc': [np.float64(0.77125), np.float64(0.74547), np.float64(0.65439), np.float64(0.6633), np.float64(0.67909), np.float64(0.64533), np.float64(0.6424), np.float64(0.64718), np.float64(0.64823), np.float64(0.65742), np.float64(0.57353)], 'srocc': [np.float64(0.78449), np.float64(0.82692), np.float64(0.80748), np.float64(0.79756), np.float64(0.80351), np.float64(0.80882), np.float64(0.77266), np.float64(0.80214), np.float64(0.77872), np.float64(0.78828), np.float64(0.75419)], 'or': [np.float64(0.11429), np.float64(0.14286), np.float64(0.17143), np.float64(0.14286), np.float64(0.11429), np.float64(0.14286), np.float64(0.1), np.float64(0.17143), np.float64(0.14286), np.float64(0.14286), np.float64(0.1)]}}
         bootstrap_results_df = pd.DataFrame(bootstrap_results)
-        #ci_at_percentile = {'l2': {'plcc': np.array([0.8397285, 0.868763 ]), 'srocc': np.array([0.8117155 , 0.84185075]), 'or': np.array([0.046073  , 0.13643175])}, 'mad': {'plcc': np.array([0.82056275, 0.8476855 ]), 'srocc': np.array([0.82419975, 0.85953025]), 'or': np.array([0.06035525, 0.12857   ])}, 'ssim': {'plcc': np.array([0.81651875, 0.876292  ]), 'srocc': np.array([0.8212195 , 0.85454225]), 'or': np.array([0.05714   , 0.13643175])}, 'psnr': {'plcc': np.array([0.798886  , 0.83199275]), 'srocc': np.array([0.76191425, 0.810771  ]), 'or': np.array([0.07143, 0.12857])}, 'ssim.1': {'plcc': np.array([0.862682  , 0.87916625]), 'srocc': np.array([0.8188485, 0.849187 ]), 'or': np.array([0.046073 , 0.1078595])}, 'vif': {'plcc': np.array([0.807293 , 0.8406845]), 'srocc': np.array([0.80503625, 0.8330985 ]), 'or': np.array([0.06356825, 0.125357  ])}, 'dists': {'plcc': np.array([0.858016  , 0.87813575]), 'srocc': np.array([0.859939 , 0.8849105]), 'or': np.array([0.046073, 0.11429 ])}, 'lpips': {'plcc': np.array([0.57334725, 0.62466325]), 'srocc': np.array([0.521166 , 0.5762325]), 'or': np.array([0.174643  , 0.23964475])}, 'ahiq': {'plcc': np.array([0.89071625, 0.9112885 ]), 'srocc': np.array([0.88538875, 0.9089965 ]), 'or': np.array([0.02857 , 0.125357])}, 'topiq_fr': {'plcc': np.array([0.58902575, 0.7305345 ]), 'srocc': np.array([0.75834575, 0.8228475 ]), 'or': np.array([0.1    , 0.17143])}}
         ci_at_percentile = pd.DataFrame(ci_at_percentile)
         print('Metric confidence intervals:\n')
         print(ci_at_percentile)
@@ -993,9 +1540,9 @@ class DataProcessor:
         #######################
 
 
-        print('Computing Delta Intervals from bootstrap iterations for Reference AHIQ and targets')
+        print(f'Computing Delta Intervals from bootstrap iterations for Reference {BEST_METRIC_HYPOTHESIS} and targets')
 
-        self.plot_metric_difference_ci('ahiq', list(bootstrap_results.keys()), bootstrap_results_df, point_estimates, metric_order)
+        self.plot_metric_difference_ci(BEST_METRIC_HYPOTHESIS, list(bootstrap_results.keys()), bootstrap_results_df, point_estimates, metric_order)
 
         print('Done. \n')
 
@@ -1024,27 +1571,593 @@ class DataProcessor:
         print('Done. \n')
 
 
+    def stimuli_wise_bootstrap_iqa_comparison(
+            self,
+            n_bootstrap=N_BOOTSTRAPS,
+            image_col="file",
+            mos_col="MOS",
+            alpha_value = SIGNIFICANCE_LEVEL,
+            visualize=False
+        ):
+
+        print("\n=========== computing CI for correlation stats PLCC, SROCC and OR with stimuli resampling ==========\n")
+
+        checkpoint_metadata = {
+            "random_seed": RANDOM_SEED,
+            "n_splits": 5,
+            "metric_names": list(self.results_df.columns),
+            "mos_column": mos_col,
+            "image_column": image_col,
+        }
+
+        # lower and upper percentile according to the p-value
+        p_percentile = [(alpha_value*100) / 2, 100 - (alpha_value*100) / 2]
+        
+        # get original POINT ESTIMATES
+        original_stats = self.get_original_statistics(visualize=visualize)
+        point_estimates = original_stats["point_estimates"]
+        point_estimate_plcc_freq, point_estimate_srocc_freq, freq_comps, freq_diffs = original_stats["frequency_point_estimates"]
+        point_estimate_plcc_lum, point_estimate_srocc_lum, y_comps, y_diffs = original_stats["frequency_point_estimates"]
+        metric_order = original_stats["metric_order"]
+        
+        print('\nOBTAINED POINT ESTIMATES ON ORIGINAL MOS DATA:\n')
+        print(point_estimates)
+
+        if BS_STIM_CHECKPOINT_PATH.exists():
+            state = load_bootstrap_checkpoint(
+                BS_STIM_CHECKPOINT_PATH,
+                RNG,
+            )
+
+            if state["n_bootstrap"] != n_bootstrap:
+                raise RuntimeError(
+                    "The requested number of replicates differs from "
+                    "the checkpoint configuration."
+                )
+
+            completed = state["completed"]
+            attempts = state["attempts"]
+            bootstrap_results = state["bootstrap_results"]
+            bootstrap_ig_stat_results = (
+                state["bootstrap_ig_stat_results"]
+            )
+            failure_log = state["failure_log"]
+
+            print(
+                f"Resuming from {completed}/{n_bootstrap} "
+                f"completed replicates."
+            )
+
+        else:
+
+
+            bootstrap_results = {
+                metric: {
+                    "plcc": [],
+                    "srocc": [],
+                    "or": [],
+                }
+                for metric in self.results_df.columns[1:]
+            }
+
+            bootstrap_ig_stat_results = {
+                "freq":{
+                    'plcc':[],
+                    'srocc':[]
+                },
+                "lum":{
+                    'plcc':[],
+                    'srocc':[]
+                },
+            }
+
+            completed = 0
+            attempts = 0
+            failure_log = []
+
+        # checkpoint loading logic end
+
+
+        maximum_attempts = n_bootstrap * 3
+
+        while completed < n_bootstrap:
+            attempts += 1
+            print(f'BOOTSTRAPPING ITERATION :{attempts}\n')
+
+            if attempts > maximum_attempts:
+                raise RuntimeError(
+                    f"Only {completed}/{n_bootstrap} valid replicates "
+                    f"after {attempts - 1} attempts. "
+                    f"Failure rate: "
+                    f"{len(failure_log) / (attempts - 1):.2%}"
+                )
+
+            try:
+                # resample stimuli, get resampled file-iqa-mos dataframe
+                bootstrapped_stimuli_df, weight = self.resample_stimuli_statistics(
+                    stimuli=self.stimuli_df,
+                    rng=RNG,
+                    mos_col=mos_col,
+                    image_col=image_col,
+                )
+
+                # transform metric with resampled MOS data and compute PLCC,SROCC,OR
+
+                bootstrapped_mos_data = bootstrapped_stimuli_df[['file', 'MOS', 'STD']]
+                bootstrapped_mos_data = bootstrapped_mos_data.rename({"file":"file_id", "MOS":"mos", "STD":"rating_std"}, axis=1)
+
+                _ = bootstrapped_stimuli_df.pop('MOS')
+                _ = bootstrapped_stimuli_df.pop('STD')
+
+                stats_on_transformed_metrics, folds = self.transform_iqa_with_bs_mos(
+                    bootstrapped_stimuli_df, 
+                    bootstrapped_mos_data, 
+                    visualize, 
+                    is_original_mos=False, 
+                    kfold_grouping=True
+                )
+
+                for e, metric in enumerate(bootstrap_results.keys()):
+                    bootstrap_results[metric]['plcc'].append(stats_on_transformed_metrics.iloc[0,e])
+                    bootstrap_results[metric]['srocc'].append(stats_on_transformed_metrics.iloc[1,e])
+                    bootstrap_results[metric]['or'].append(stats_on_transformed_metrics.iloc[3,e])
+
+                # compute frequency correlation with resampled MOS
+
+                bootstrap_plcc_freq, bootstrap_srocc_freq = self.get_freq_correlations(bootstrapped_stimuli_df, bootstrapped_mos_data, folds=folds)
+                bootstrap_plcc_lum, bootstrap_srocc_lum  = self.get_color_lum_correlations(bootstrapped_stimuli_df, bootstrapped_mos_data, folds=folds)
+
+                bootstrap_ig_stat_results['freq']['plcc'].append(bootstrap_plcc_freq)
+                bootstrap_ig_stat_results['lum']['plcc'].append(bootstrap_plcc_lum)
+                bootstrap_ig_stat_results['freq']['srocc'].append(bootstrap_srocc_freq)
+                bootstrap_ig_stat_results['lum']['srocc'].append(bootstrap_srocc_lum)
+
+                completed += 1
+                print(f"\nFinished Bootstrapping Iteration {attempts}.\n")
+
+
+                if completed % CHECKPOINT_EVERY == 0:
+                    save_bootstrap_checkpoint(
+                        BS_STIM_CHECKPOINT_PATH,
+                        completed=completed,
+                        attempts=attempts,
+                        n_bootstrap=n_bootstrap,
+                        bootstrap_results=bootstrap_results,
+                        bootstrap_ig_stat_results=(
+                            bootstrap_ig_stat_results
+                        ),
+                        failure_log=failure_log,
+                        rng=RNG,
+                        metadata=checkpoint_metadata,
+                    )
+
+                    print(
+                        f"Saved checkpoint after "
+                        f"{completed} valid replicates."
+                    )
+
+
+
+            except FivePLFitError as exc:
+                failure_log.append({
+                    "attempt": attempts,
+                    "error": str(exc),
+                })
+
+                print(
+                    f"Rejected bootstrap attempt {attempts}: {exc}"
+                )
+                continue
+
+        
+
+        print('\nComputing alpha-Level quantile from collected bootstraps for every metric..\n')
+
+        p_values_iqa_difference = self.compute_pvalue_from_bs(point_estimates=point_estimates, bootstrap_results=bootstrap_results)
+
+        ci_at_percentile = {metric: {stat:((np.round(np.percentile(iter_vals, p_percentile), decimals=3))) for stat, iter_vals in iter_stats.items()} for metric, iter_stats in bootstrap_results.items()}
+        bootstrap_results_df = pd.DataFrame(bootstrap_results)
+        ci_at_percentile = pd.DataFrame(ci_at_percentile)
+        print('Metric confidence intervals:\n')
+        print(ci_at_percentile)
+        (ci_at_percentile.T).to_csv("./survey_stats/CI_metrics.csv")
+        print('Done.\n')
+
+        ######################
+
+        print('\nChecking suspicious point-estimate to bootstraping ci metric-statistics combinations...\n')
+
+        checks = [
+            ("topiq_fr", "plcc"),
+            ("lpips", "srocc"),
+        ]
+
+        self.check_stats(point_estimates, bootstrap_results, checks)
+
+        print('Done. \n')
+
+
+        ######################
+
+
+        print('\nVisualizing CI for all stats...\n')
+
+        self.plot_metric_confidence_intervals(point_estimates=point_estimates, confidence_intervals=ci_at_percentile, metric_order=metric_order)
+
+        print('Done. \n')
+
+
+        #######################
+
+
+        print(f'Computing Delta Intervals from bootstrap iterations for Reference {BEST_METRIC_HYPOTHESIS} and targets')
+
+        self.plot_metric_difference_ci(BEST_METRIC_HYPOTHESIS, list(bootstrap_results.keys()), bootstrap_results_df, point_estimates, metric_order)
+
+        print('Done. \n')
+
+
+        ######################
+
+
+        print('Create Graph and Confidence Intervals for Color and Lum Correlation Point estimates...\n')
+
+        self.compute_freq_ci_and_plot(
+            point_estimate_plcc_freq, 
+            point_estimate_srocc_freq, 
+            bootstrap_ig_stat_results['freq']['plcc'], 
+            bootstrap_ig_stat_results['freq']['srocc'], 
+            freq_comps, 
+            freq_diffs)
+        
+        self.compute_color_ci_and_plot(
+            point_estimate_plcc_lum, 
+            point_estimate_srocc_lum, 
+            bootstrap_ig_stat_results['lum']['plcc'],
+            bootstrap_ig_stat_results['lum']['srocc'], 
+            y_comps, 
+            y_diffs)
+
+        print('Done. \n')
+
+
+    def crossed_bootstrap_iqa_comparison(
+            self,
+            n_bootstrap=N_BOOTSTRAPS,
+            image_col="file_id",
+            mos_col="MOS",
+            alpha_value = SIGNIFICANCE_LEVEL,
+            visualize=False
+        ):
+
+        print("\n=========== computing CI for correlation stats PLCC, SROCC and OR with two-way crossed resampling ==========\n")
+
+
+        checkpoint_metadata = {
+            "random_seed": RANDOM_SEED,
+            "n_splits": 5,
+            "metric_names": list(self.results_df.columns),
+            "mos_column": mos_col,
+            "image_column": image_col,
+        }
+
+        # lower and upper percentile according to the p-value
+        p_percentile = [(alpha_value*100) / 2, 100 - (alpha_value*100) / 2]
+
+        # get original POINT ESTIMATES
+        original_stats = self.get_original_statistics(visualize=visualize)
+        point_estimates = original_stats["point_estimates"]
+        point_estimate_plcc_freq, point_estimate_srocc_freq, freq_comps, freq_diffs = original_stats["frequency_point_estimates"]
+        point_estimate_plcc_lum, point_estimate_srocc_lum, y_comps, y_diffs = original_stats["frequency_point_estimates"]
+        metric_order = original_stats["metric_order"]
+        
+        print('\nOBTAINED POINT ESTIMATES ON ORIGINAL MOS DATA:\n')
+        print(point_estimates)
+        
+
+        if BS_CRS_CHECKPOINT_PATH.exists():
+            state = load_bootstrap_checkpoint(
+                BS_CRS_CHECKPOINT_PATH,
+                RNG,
+            )
+
+            if state["n_bootstrap"] != n_bootstrap:
+                raise RuntimeError(
+                    "The requested number of replicates differs from "
+                    "the checkpoint configuration."
+                )
+
+            completed = state["completed"]
+            attempts = state["attempts"]
+            bootstrap_results = state["bootstrap_results"]
+            bootstrap_ig_stat_results = (
+                state["bootstrap_ig_stat_results"]
+            )
+            failure_log = state["failure_log"]
+
+            print(
+                f"Resuming from {completed}/{n_bootstrap} "
+                f"completed replicates."
+            )
+
+        else:
+
+
+            bootstrap_results = {
+                metric: {
+                    "plcc": [],
+                    "srocc": [],
+                    "or": [],
+                }
+                for metric in self.results_df.columns[1:]
+            }
+
+            bootstrap_ig_stat_results = {
+                "freq":{
+                    'plcc':[],
+                    'srocc':[]
+                },
+                "lum":{
+                    'plcc':[],
+                    'srocc':[]
+                },
+            }
+
+            completed = 0
+            attempts = 0
+            failure_log = []
+
+        # checkpoint loading logic end
+
+
+        maximum_attempts = n_bootstrap * 3
+
+        while completed < n_bootstrap:
+            attempts += 1
+            print(f'BOOTSTRAPPING ITERATION :{attempts}\n')
+
+            if attempts > maximum_attempts:
+                raise RuntimeError(
+                    f"Only {completed}/{n_bootstrap} valid replicates "
+                    f"after {attempts - 1} attempts. "
+                    f"Failure rate: "
+                    f"{len(failure_log) / (attempts - 1):.2%}"
+                )
+
+            try:
+                # resample stimuli, get resampled file-iqa-mos dataframe
+                bootstrapped_df, part_weight, stim_weight = self.resample_crossed_statistics(
+                    ratings=self.participants_clean,
+                    stimuli=self.stimuli_df,
+                    rng=RNG
+                )
+
+                # transform metric with resampled MOS data and compute PLCC, SROCC, OR
+                
+
+
+                bootstrapped_mos_data = bootstrapped_df[['file_id', 'mos', 'rating_std', 'original_MOS', 'bootstrap_draw', 'n_ratings']]
+
+                bootstrapped_df.drop(['mos', 'rating_std', 'original_MOS', 'bootstrap_draw', 'n_ratings'], axis=1, inplace=True)
+
+
+                stats_on_transformed_metrics, folds = self.transform_iqa_with_bs_mos(
+                    bootstrapped_df, 
+                    bootstrapped_mos_data, 
+                    visualize, 
+                    is_original_mos=False, 
+                    kfold_grouping=True
+                )
+
+                for e, metric in enumerate(bootstrap_results.keys()):
+                    bootstrap_results[metric]['plcc'].append(stats_on_transformed_metrics.iloc[0,e])
+                    bootstrap_results[metric]['srocc'].append(stats_on_transformed_metrics.iloc[1,e])
+                    bootstrap_results[metric]['or'].append(stats_on_transformed_metrics.iloc[3,e])
+
+                # compute frequency correlation with resampled MOS
+
+                bootstrap_plcc_freq, bootstrap_srocc_freq = self.get_freq_correlations(bootstrapped_df, bootstrapped_mos_data, folds=folds)
+                bootstrap_plcc_lum, bootstrap_srocc_lum  = self.get_color_lum_correlations(bootstrapped_df, bootstrapped_mos_data, folds=folds)
+
+                bootstrap_ig_stat_results['freq']['plcc'].append(bootstrap_plcc_freq)
+                bootstrap_ig_stat_results['lum']['plcc'].append(bootstrap_plcc_lum)
+                bootstrap_ig_stat_results['freq']['srocc'].append(bootstrap_srocc_freq)
+                bootstrap_ig_stat_results['lum']['srocc'].append(bootstrap_srocc_lum)
+
+                completed += 1
+                print(f"\nFinished Bootstrapping Iteration {attempts}.\n")
+
+
+                if completed % CHECKPOINT_EVERY == 0:
+                    save_bootstrap_checkpoint(
+                        BS_CRS_CHECKPOINT_PATH,
+                        completed=completed,
+                        attempts=attempts,
+                        n_bootstrap=n_bootstrap,
+                        bootstrap_results=bootstrap_results,
+                        bootstrap_ig_stat_results=(
+                            bootstrap_ig_stat_results
+                        ),
+                        failure_log=failure_log,
+                        rng=RNG,
+                        metadata=checkpoint_metadata,
+                    )
+
+                    print(
+                        f"Saved checkpoint after "
+                        f"{completed} valid replicates."
+                    )
+
+
+            except FivePLFitError as exc:
+                failure_log.append({
+                    "attempt": attempts,
+                    "error": str(exc),
+                })
+
+                print(
+                    f"Rejected bootstrap attempt {attempts}: {exc}"
+                )
+                continue
+
+
+        print('\nComputing alpha-Level quantile from collected bootstraps for every metric..\n')
+
+
+
+        ci_at_percentile = {metric: {stat:((np.round(np.percentile(iter_vals, p_percentile), decimals=3))) for stat, iter_vals in iter_stats.items()} for metric, iter_stats in bootstrap_results.items()}
+        bootstrap_results_df = pd.DataFrame(bootstrap_results)
+        ci_at_percentile = pd.DataFrame(ci_at_percentile)
+        print('Metric confidence intervals:\n')
+        print(ci_at_percentile)
+        (ci_at_percentile.T).to_csv("./survey_stats/CI_metrics.csv")
+        print('Done.\n')
+
+        ######################
+
+        print('\nChecking suspicious point-estimate to bootstraping ci metric-statistics combinations...\n')
+
+        checks = [
+            ("topiq_fr", "plcc"),
+            ("lpips", "srocc"),
+        ]
+
+        self.check_stats(point_estimates, bootstrap_results, checks)
+
+        print('Done. \n')
+
+
+        ######################
+
+
+        print('\nVisualizing CI for all stats...\n')
+
+        self.plot_metric_confidence_intervals(point_estimates=point_estimates, confidence_intervals=ci_at_percentile, metric_order=metric_order)
+
+        print('Done. \n')
+
+
+        #######################
+
+
+        print(f'Computing Delta Intervals from bootstrap iterations for Reference {BEST_METRIC_HYPOTHESIS} and targets')
+
+        self.plot_metric_difference_ci(BEST_METRIC_HYPOTHESIS, list(bootstrap_results.keys()), bootstrap_results_df, point_estimates, metric_order)
+
+        print('Done. \n')
+
+
+        ######################
+
+
+        print('Create Graph and Confidence Intervals for Color and Lum Correlation Point estimates...\n')
+
+        self.compute_freq_ci_and_plot(
+            point_estimate_plcc_freq, 
+            point_estimate_srocc_freq, 
+            bootstrap_ig_stat_results['freq']['plcc'], 
+            bootstrap_ig_stat_results['freq']['srocc'], 
+            freq_comps, 
+            freq_diffs)
+        
+        self.compute_color_ci_and_plot(
+            point_estimate_plcc_lum, 
+            point_estimate_srocc_lum, 
+            bootstrap_ig_stat_results['lum']['plcc'],
+            bootstrap_ig_stat_results['lum']['srocc'], 
+            y_comps, 
+            y_diffs)
+
+        print('Done. \n')
+
+
+
+
+    ##########################################################################################
+
+
+    # IQA-MOS AGREEMENT ANALYSIS
+
+
+    ##########################################################################################
+
+
+    def compare_to_iqa(self, original_mos, visualize=False):
+        results_df = self.results_df.copy(deep=True)
+        _ = results_df.pop('file_id') 
+
+        rating_std = self.metric_collection.ig_statistics['rating_std'].to_numpy()
+
+        metrics_df = results_df.apply(self.metric_collection, args=(original_mos['mos'], rating_std), visualize=visualize, is_original_mos=True, folds=None, axis=0)
+        return metrics_df
+                    
+    def get_iqa_for_file(self, file, pert_mag, attack):
+        iqa_path = self.iqa_root + f'{pert_mag}/{attack}/iqa_report.csv'
+        with open(iqa_path, 'r') as f:
+            csv_obj = csv.reader(f)
+            for line in csv_obj:
+                if line[0].endswith(str(file)):
+                    return [float(i) for i in line[1:]]
+
+    def calculate_statistics(
+        self,
+        data,
+        metric,
+        mos_col="mos",
+        std_col="rating_std",
+    ):
+        predicted_mos = data[metric].to_numpy(dtype=float)
+        mos = data[mos_col].to_numpy(dtype=float)
+        rating_std = data[std_col].to_numpy(dtype=float)
+
+        if not (
+            predicted_mos.shape
+            == mos.shape
+            == rating_std.shape
+        ):
+            raise ValueError("Input arrays have different shapes.")
+
+        plcc = pearsonr(predicted_mos, mos).statistic
+        srocc = spearmanr(predicted_mos, mos).statistic
+
+        # Fezza/legacy IQA definition
+        is_outlier = (
+            np.abs(predicted_mos - mos)
+            > 2.0 * rating_std
+        )
+
+        outlier_ratio = is_outlier.mean()
+
+        return plcc, srocc, outlier_ratio
+
+
     def plot_metric_difference_ci(self, metric, targets, b_results_df, point_estimates, metric_order):
 
         metric_order = metric_order[1:] # remove AHIQ 
-        #metric_order.remove('l2')
+        
 
-        point_estimate_delta_plcc = point_estimates['ahiq'][0] - point_estimates[:].iloc[0]
-        point_estimate_delta_srocc = point_estimates['ahiq'][1] - point_estimates[:].iloc[1]
-        point_estimate_delta_or = point_estimates[:].iloc[3] - point_estimates['ahiq'][3]
+        point_estimate_delta_plcc = point_estimates[BEST_METRIC_HYPOTHESIS][0] - point_estimates[:].iloc[0]
+        point_estimate_delta_srocc = point_estimates[BEST_METRIC_HYPOTHESIS][1] - point_estimates[:].iloc[1]
+        point_estimate_delta_or = point_estimates[:].iloc[3] - point_estimates[BEST_METRIC_HYPOTHESIS][3]
         point_estimate_delta = pd.concat((point_estimate_delta_plcc, point_estimate_delta_srocc, point_estimate_delta_or), axis=1).T
         delta_interval_dict = {}
+        delta_array_dict = {}
 
         for target in targets:
             if target != metric:
-                delta_intervals = self.metric_ci_comparison(b_results_df, metric, target)
+                delta_intervals, bs_delta_arrays = self.metric_ci_comparison(b_results_df, metric, target)
                 delta_interval_dict[target] = delta_intervals
-                #delta_interval_dict[target] = {k:(round(point_estimate_delta[target].iloc[n],3), v.round(3)) for (k,v), n in zip(delta_intervals.items(), [0, 1, 2])}
+                delta_array_dict[target] = bs_delta_arrays
+
 
         delta_interval_df = pd.DataFrame(delta_interval_dict)
+
         delta_interval_df.drop('l2', axis=1)
         point_estimates.drop('l2', axis=1)
-        
+
+        p_values_iqa_difference = self.compute_pvalue_from_bs(point_estimates=point_estimate_delta, bs_delta_arrays=delta_array_dict)
+
+        p_holm, p_raw, reject_h0 = holm_correction(p_values_iqa_difference) 
 
         stat_2_int = {
                     'plcc':0,
@@ -1057,9 +2170,6 @@ class DataProcessor:
             context="paper",
             font_scale=FONT_SCALE
         )
-
-
-
 
         y_positions = np.arange(len(metric_order))
 
@@ -1198,40 +2308,11 @@ class DataProcessor:
 
         plt.savefig('./visualizations/delta_confidence_intervals.png')
         return figure, axes
-    
-
-    def identity_bootstrap_test(self, ratings_long, original_mos, participant_col, image_col,rating_col):
-        participant_ids = ratings_long["participant_id"].unique()
-
-        identity_weights = pd.Series(
-            1,
-            index=participant_ids,
-            name="bootstrap_weight",
-        )
-
-        identity_mos = self.compute_weighted_mos(
-            ratings_long,
-            identity_weights,
-            participant_col=participant_col,
-            rating_col=rating_col,
-            image_col=image_col
-        ).sort_index()
-
-        original_mos = original_mos.sort_index()
-
-        is_identity = np.testing.assert_allclose(
-            identity_mos['mos'].to_numpy(),
-            original_mos['mos'].to_numpy(),
-            rtol=0,
-            atol=1e-12,
-        )
-
-        return True if is_identity is None else False
 
 
-    def metric_ci_comparison(self, bootstrap_results_df, metric, target, p_value=0.05):
+    def metric_ci_comparison(self, bootstrap_results_df, metric, target, alpha_value=SIGNIFICANCE_LEVEL):
 
-        p_percentile = [(p_value*100) / 2, 100 - (p_value*100) / 2]
+        p_percentile = [(alpha_value*100) / 2, 100 - (alpha_value*100) / 2]
 
         metric_array = np.vstack(bootstrap_results_df[metric].to_numpy()).astype(np.float64)
         target_array = np.vstack(bootstrap_results_df[target].to_numpy()).astype(np.float64)
@@ -1244,14 +2325,13 @@ class DataProcessor:
         srocc_delta_intervals = np.percentile(srocc_delta_array, p_percentile)
         or_delta_intervals = np.percentile(or_delta_array, p_percentile)
 
-        print(f'\n\tConfidence Intervals at confidence level: {100 - (p_value*100)} for reference {metric.upper()} and target {target.upper()}\n')
+        print(f'\n\tConfidence Intervals at confidence level: {100 - (alpha_value*100)} for reference {metric.upper()} and target {target.upper()}\n')
 
         print('\t\tDelta PLCC: ' , plcc_delta_intervals)
         print('\t\tDelta SROCC: ' , srocc_delta_intervals)
         print('\t\tDelta OR: ' , or_delta_intervals)
 
-        return {'plcc': plcc_delta_intervals, 'srocc' : srocc_delta_intervals, 'or': or_delta_intervals}
-        
+        return {'plcc': plcc_delta_intervals, 'srocc' : srocc_delta_intervals, 'or': or_delta_intervals}, {'plcc': plcc_delta_array, 'srocc' : srocc_delta_array, 'or': or_delta_array}
 
     def plot_metric_confidence_intervals(
         self,
@@ -1450,54 +2530,45 @@ class DataProcessor:
 
         return estimate, lower, upper
 
-
-
-
-    def transform_iqa_with_bs_mos(self, metric_df, mos_df, visualize=False, is_original_mos=False):
+    def transform_iqa_with_bs_mos(
+            self, 
+            metric_df, 
+            mos_df, 
+            visualize=False, 
+            is_original_mos=False,
+            kfold_grouping=False):
 
         #align MOS,STD and Metrics
         mos_df = mos_df.sort_values(by='file_id')
-        metric_df = metric_df.sort_values(by='file')
+        metric_df = metric_df.sort_values(by='file_id')
 
         # extract MOS and STD
-        mos_scores = mos_df['mos'].to_numpy()
-        rating_std = mos_df['rating_std'].to_numpy()
+        mos_scores = mos_df['mos']#.to_numpy()
+        rating_std = mos_df['rating_std']#.to_numpy()
 
-        _ = metric_df.pop('file') # remove the file column from the metric df
+        if kfold_grouping:
+            # to prevent training data leakage for stimuli-based resamplings
+            group_cv = GroupKFold(n_splits=5)
+            folds = list(
+                group_cv.split(
+                    X=metric_df,
+                    groups=metric_df["file_id"],
+                )
+            )
+        else:
+            folds = None
 
-        metric_df_transformed = metric_df.apply(self.metric_collection.fit_and_transform, args=(mos_scores, visualize, is_original_mos), raw=True, axis=0, result_type='broadcast')
-        metrics_df = metric_df_transformed.apply(self.metric_collection, args=(mos_scores, rating_std), axis=0)
-        return metrics_df   
+        _ = metric_df.pop('file_id') # remove the file column from the metric df
+
+        metrics_df = metric_df.apply(self.metric_collection, args=(mos_scores, rating_std), visualize=visualize, is_original_mos=False, folds=folds, axis=0)
+        return metrics_df, folds
     
     # Step 3: Compare MOS to (1) frequency features (radial profiles) and (2) luminance and color features (Y,Cb,CR)
 
 
-    def log_minmax_l2(self, l2):
-        l2 = math.log(l2 + self.eps)
-        return (l2 - self.minimum_l2) / (self.maximum_l2 - self.minimum_l2)
-
-    def get_mos(self, file):
-        attack, pert_deg = self.file_2_inf[file.split('.')[0]]
-        path = f'{self.iqa_root}{pert_deg}/{attack}/iqa_report.csv'
-        with open(path, 'r') as f:
-            csv_obj = csv.reader(f)
-            for line in csv_obj:
-                if line[0] == f'./data/survey/images/{str(file)}':
-                    return float(line[-1])
-
-
-    def get_actual_distortion(self, file):
-        attack, pert_deg = self.file_2_inf[file.split('.')[0]]
-        path = f'{self.iqa_root}{pert_deg}/{attack}/iqa_report.csv'
-        with open(path, 'r') as f:
-            csv_obj = csv.reader(f)
-            for line in csv_obj:
-                if line[0] == f'./data/survey/images/{str(file)}':
-                    return line[1]
-
     ## (1) Frequency
 
-    def compute_freq_ci_and_plot(self, point_estimate_plcc, point_estimate_srocc, bootstrap_results_plcc, bootstrap_results_srocc, freq_comps, diffs, p_value=0.05):
+    def compute_freq_ci_and_plot(self, point_estimate_plcc, point_estimate_srocc, bootstrap_results_plcc, bootstrap_results_srocc, freq_comps, diffs, alpha_value=SIGNIFICANCE_LEVEL):
 
         sns.set_theme(
             style="whitegrid",
@@ -1505,7 +2576,7 @@ class DataProcessor:
             font_scale=FONT_SCALE
         )
 
-        p_percentile = [(p_value*100) / 2, 100 - (p_value*100) / 2]
+        p_percentile = [(alpha_value*100) / 2, 100 - (alpha_value*100) / 2]
 
         plcc = point_estimate_plcc.statistic
         plcc_lower, plcc_upper = np.percentile(
@@ -1572,7 +2643,7 @@ class DataProcessor:
 
 
 
-    def compute_color_ci_and_plot(self, point_estimate_plcc,point_estimate_srocc,  bootstrap_results_plcc, bootstrap_results_srocc, y_comps, y_diffs, p_value=0.05):
+    def compute_color_ci_and_plot(self, point_estimate_plcc,point_estimate_srocc,  bootstrap_results_plcc, bootstrap_results_srocc, y_comps, y_diffs, alpha_value=SIGNIFICANCE_LEVEL):
 
         sns.set_theme(
             style="whitegrid",
@@ -1580,7 +2651,7 @@ class DataProcessor:
             font_scale=FONT_SCALE
         )
 
-        p_percentile = [(p_value*100) / 2, 100 - (p_value*100) / 2]
+        p_percentile = [(alpha_value*100) / 2, 100 - (alpha_value*100) / 2]
 
         plcc = point_estimate_plcc.statistic
         plcc_lower, plcc_upper = np.percentile(
@@ -1644,23 +2715,32 @@ class DataProcessor:
 
         plt.savefig('./visualizations/luminance_percdelta.png')
 
+
+    ##########################################################################################
+
+
+    # IMAGE CHARACTERISTIC - PERCEPTUAL DISTORTION - RELATIONSHIP ANALYSIS
+
+
+    ##########################################################################################
+
     
-    def get_freq_correlations(self, metric_df, mos_df, is_original_mos=False):
+    def get_freq_correlations(self, metric_df, mos_df, is_original_mos=False, folds=None):
         # compute mean frequency per image
         # compute difference bewteen MOS result and distortion class
 
         #align MOS,STD and Metrics
         mos_df = mos_df.sort_values(by='file_id')
-        metric_df = metric_df.sort_values(by='file')
+        metric_df = metric_df.sort_values(by='file_id')
 
         # extract MOS and STD
         mos_scores = mos_df['mos'].to_numpy()
         rating_std = mos_df['rating_std'].to_numpy()
 
-        files_df = metric_df.pop('file') # remove the file column from the metric df
+        files_df = metric_df.pop('file_id') # remove the file column from the metric df
 
         l2_results = metric_df['l2']
-        l2_results = self.metric_collection.fit_and_transform(l2_results, mos_scores) # transformed iqm
+        l2_results = self.metric_collection.fit_and_transform(l2_results, mos_scores, visualize=False, is_original_mos=is_original_mos, folds=folds) # transformed iqm
         frequency_components_df = files_df.apply(self.get_frequency_components)
 
         if is_original_mos:
@@ -1670,23 +2750,24 @@ class DataProcessor:
             plcc_result, srocc_result = self.compute_freq_correlations_lsq(mos_scores, l2_results, frequency_components_df, is_original_mos)
             return plcc_result, srocc_result
 
-    def get_color_lum_correlations(self, metric_df, mos_df, is_original_mos=False):
+
+    def get_color_lum_correlations(self, metric_df, mos_df, is_original_mos=False, folds=None):
         # compute mean frequency per image
         # compute difference bewteen MOS result and distortion class
 
         #align MOS,STD and Metrics
         mos_df = mos_df.sort_values(by='file_id')
-        metric_df = metric_df.sort_values(by='file')
+        metric_df = metric_df.sort_values(by='file_id')
 
         # extract MOS and STD
         mos_scores = mos_df['mos'].to_numpy()
         rating_std = mos_df['rating_std'].to_numpy()
 
-        files_df = metric_df.pop('file') # remove the file column from the metric df
+        files_df = metric_df.pop('file_id') # remove the file column from the metric df
 
 
         l2_results = metric_df['l2']
-        l2_results = self.metric_collection.fit_and_transform(l2_results, mos_scores)
+        l2_results = self.metric_collection.fit_and_transform(l2_results, mos_scores, visualize=False, is_original_mos=is_original_mos, folds=folds) # transformed iqm
         clr_components_df = files_df.apply(self.get_color_lum_components)
 
         if is_original_mos:
@@ -1699,7 +2780,7 @@ class DataProcessor:
     def get_color_lum_components(self, file):
         attack, pert = file.split('-')
         file = self.dist_dict[attack][pert]
-        path_to_ori = self.iqa_root+ 'images/' + str(file) + '.png'
+        path_to_ori = self.iqa_root / ('images/' + str(file) + '.png')
         img = Image.open(path_to_ori)
         img = img.convert('YCbCr')
         img = self.to_tensor(img)
@@ -1731,7 +2812,7 @@ class DataProcessor:
     def get_frequency_components(self, file):
         attack, pert = file.split('-')
         file = self.dist_dict[attack][pert]
-        path_to_ori = self.iqa_root+ 'images/' + str(file) + '.png'
+        path_to_ori = self.iqa_root / ('images/' + str(file) + '.png')
         img = Image.open(path_to_ori)
         img = self.to_tensor(img)
         rad_profile = self.dataset_contructor.compute_rad_profile(img)
@@ -1767,402 +2848,115 @@ class DataProcessor:
             return plcc_res, srocc_res, y_comps, y_diffs
         else:
             return plcc_res, srocc_res
+
+def holm_correction(p_value_df, alpha=SIGNIFICANCE_LEVEL):
+
+    stacked = p_value_df.stack()
     
-    def rm_outliers(self, ol_threshold=3.0):
-        # compute z-score & remove evals that are 3x sigma away from the mean
-        filtered_votes = self.votes.copy()
-        for attack, d_dict in self.votes.items():
-            for dist, v_dict in d_dict.items():
-                votes = self.votes[attack][dist]
-                z_scores = self.compute_z(votes)
-                remove = [z_score > ol_threshold for z_score in z_scores]
-                filtered_votes[attack][dist] = [vote for vote, remove_ind in zip(votes, remove) if not remove_ind]
-        self.votes = filtered_votes
-    
-    def compute_z(self, votes):
-        n = len(votes)
-        mu = sum(votes) / n
-        sigma = math.sqrt(sum([(vote - mu)**2 for vote in votes])/ (n-1))
-        z_scores = [abs(((vote - mu) / (sigma + self.eps))) for vote in votes]
-        return z_scores
-    
+    labels = (
+        stacked.index
+        .to_flat_index()
+        .to_numpy()
+    )
 
-    # Metrics
+    raw_pvalues_array = stacked.to_numpy()
 
-    def norm_pearson_corr(self, x, y):
-        """
-        Compute the Pearson correlation coefficient between two images.
-        
-        Args:
-            img1, img2: torch.Tensor of shape (C, H, W) or (H, W).
-            
-        Returns:
-            Pearson correlation coefficient (scalar tensor).
+    rejected, adjusted_pvalues, _, _ = multipletests(
+        raw_pvalues_array,
+        alpha=alpha,
+        method="holm",
+    )
 
-        1 -> perfect correlation
-        0.5 -> not correlated
-        0 -> perfect negative correlation
+    results  =  pd.DataFrame({
+        "comparison": labels,
+        "p_raw": raw_pvalues_array,
+        "p_holm": adjusted_pvalues,
+        "reject_h0": rejected,
+    }, index=stacked.index)
 
-        invert for this computation
-        """
-        x = x.flatten()
-        y = y.flatten()
-        
-        mean1, mean2 = x.mean(), y.mean()
-        std1, std2 = x.std(), y.std()
-        covariance = ((x - mean1) * (y - mean2)).mean()      
-        pearson_corr = covariance / (std1 * std2 + 1e-8)
-        return pearson_corr
+    p_holm, p_raw, reject_h0 = results["p_holm"].unstack(), results["p_raw"].unstack(), results["reject_h0"].unstack()
 
-class MetricCollection:
+    print("###################################################################################\n")
 
-    def __init__(self, mos_np, ig_statistics): 
-        self.mos_scores = mos_np
-        self.ig_statistics = ig_statistics
+    print("Metric difference hypothesis testing using Holm-adjusted p-values from two-way crossed participant / stimuli resampling\n")
 
-    def cross_validated_5pl(
-        self,
-        raw_scores,
-        mos_scores,
-        n_splits=5,
-    ):
-        metric_name = raw_scores.name
-
-        raw_scores = np.asarray(raw_scores, dtype=float)
-        mos = np.asarray(mos_scores, dtype=float)
-
-        p0 = [1.0, 5.0, np.median(raw_scores), 0.0, np.mean(mos)]
-
-        mapped_predictions = np.full(
-            len(raw_scores),
-            np.nan,
-        )
-
-        folds = KFold(
-            n_splits=n_splits,
-            shuffle=True,
-            random_state=RANDOM_SEED,
-        )
-
-        for train_indices, test_indices in folds.split(raw_scores):
-            try:
-                parameters, _ = curve_fit(
-                    MetricCollection.logistic_5pl,
-                    raw_scores[train_indices],
-                    mos[train_indices],
-                    p0,
-                    maxfev=1000000,
-                    method="trf",
-                    x_scale="jac",
-
-                )
-
-                mapped_predictions[test_indices] = MetricCollection.logistic_5pl(raw_scores[test_indices], *parameters)
-
-            except (
-                RuntimeError,
-                ValueError,
-                FloatingPointError,
-                np.linalg.LinAlgError,
-            ) as exc:
-                raise FivePLFitError(
-                    f"5PL fit failed for metric={metric_name}. "
-                ) from exc
-
-        return mapped_predictions, parameters
-
-    """@staticmethod
-    def logistic_5pl(x, a, b, c, d, g):
-        return a * (0.5 - (1/(1+np.exp(b*(x - c))))) + d*x + g"""
-
-    @staticmethod
-    def logistic_5pl(x, a, b, c, d, g):
-        return (
-            a * (0.5 - expit(-b * (x - c)))
-            + d * x
-            + g
-        )
-
-    @staticmethod
-    def hyperplane(x, slope, intercept):
-        return slope * x + intercept
-    
-    def fit_and_transform(self, iqm_scores, mos_scores, visualize=False, is_original_mos=False):
-
-        sns.set_theme(
-            style="whitegrid",
-            context="paper",
-            font_scale=FONT_SCALE
-        )
-
-        print(f"\n\t cross-validation logistic curve fit for metric {iqm_scores.name.upper()}")
-
-        #iqm_scores = self.minmax(iqm_scores)
-        #params = MetricCollection.fit_data(iqm_scores, self.mos_scores)
-        #transformed_iqm_scores = MetricCollection.logistic_5pl(iqm_scores, *params)
-        transformed_iqm_scores, params= self.cross_validated_5pl(raw_scores=iqm_scores, mos_scores=mos_scores, n_splits=5)
+    print("###################################################################################\n")
 
 
-        x_fit = np.linspace(min(iqm_scores), max(iqm_scores), 200)
-        y_fit = self.logistic_5pl(x_fit, *params)
+    print("###################################################################################\n")
 
-        plt.figure(figsize=(8, 5))
-        plt.scatter(
-            iqm_scores, 
-            mos_scores,
-            marker="o",
-            s=48,
-            facecolors="white",
-            edgecolors="#0072B2",
-            linewidths=1.3,
-            label="IQA vs. MOS",
-            zorder=3)
-        plt.plot(x_fit, y_fit, color='grey', label='Fitted 5PL Curve', linewidth=2)
-        plt.xlabel(f'{iqm_scores.name.upper()} score')
-        plt.ylabel('MOS')
-        plt.title(f'5-Parameter Logistic Fit to {(iqm_scores.name.upper())} vs. MOS', fontweight='bold', fontsize=TITLE_SIZE)
-        plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
+    print("Raw p-values:\n")
+    print(p_raw, "\n")
 
-        if visualize:
-            plt.show()
-        if is_original_mos:
-            plt.savefig(f'./visualizations/{iqm_scores.name.upper()}.png')
-
-        return transformed_iqm_scores
-    
-    def minmax(self, iqm_scores):
-        maxi = iqm_scores.max()
-        mini = iqm_scores.min()
-        return (iqm_scores - mini) / (maxi - mini)
-
-    @staticmethod
-    def fit_data(iqm_scores, mos_scores):
-
-        p0 = [1.0, 5.0, np.median(iqm_scores), 0.0, np.mean(mos_scores)]
-
-        params, _ = curve_fit(MetricCollection.logistic_5pl, iqm_scores, mos_scores, p0, maxfev=1000000)
-        return params
-
-    @staticmethod
-    def fit_data_lsq(x, y):
-
-        x = np.asarray(x)
-        y = np.asarray(y)
-        n = x.size
-
-        Sx = x.sum()
-        Sy = y.sum()
-        Sxy = (x * y).sum()
-        Sxx = (x * x).sum()  # Σ x^2
-
-        # numerator and denominator with correct parentheses
-        numerator = n * Sxy - Sx * Sy
-        denominator = n * Sxx - Sx * Sx
-
-        if denominator == 0:
-            raise ValueError("Denominator is zero — all x values are identical.")
-        slope = numerator / denominator
-        intercept = (Sy - slope * Sx) / n
-        return slope, intercept
-
-    def __call__(self, iqm_scores, mos_scores, rating_std, transform_iqm=False):
-        
-        # map by logistic curve
-        if transform_iqm:
-            iqm_scores = MetricCollection.fit_and_transform(iqm_scores, mos_scores)
-
-        # pearson
-        r_pearson, p_value_pearson = pearsonr(iqm_scores, mos_scores)
-    
-        #rsme
-        r_rsme = MetricCollection.rmse(iqm_scores, mos_scores)
-
-        # spearman rank order correlation
-        r_spearman, p_value_spearman = spearmanr(iqm_scores, mos_scores)
-
-        # outlier ratio
-        r_or = MetricCollection.outlier_ratio(iqm_scores, mos_scores, rating_std=rating_std)
+    print("###################################################################################\n")
 
 
-        results =  [r_pearson, r_spearman, r_rsme, r_or, p_value_pearson, p_value_spearman]
-        return [round(i, 5) for i in results]
 
-    @staticmethod
-    def rmse(iqm_scores, mos_scores):
-        return np.sqrt(((iqm_scores - mos_scores)**2).sum())
+    print("###################################################################################\n")
 
+    print("Holm-adjusted p-values:\n")
+    print(p_holm, "\n")
 
-    @staticmethod
-    def outlier_ratio(iqm_scores, mos, rating_std):
-        iqm_scores = np.asarray(
-            iqm_scores, dtype=float
-        ).reshape(-1)
-
-        mos = np.asarray(
-            mos, dtype=float
-        ).reshape(-1)
-
-        rating_std = np.asarray(
-            rating_std, dtype=float
-        ).reshape(-1)
-
-        if not (
-            iqm_scores.shape
-            == mos.shape
-            == rating_std.shape
-        ):
-            raise ValueError(
-                "Expected one predicted MOS, MOS, and rating "
-                "standard deviation per image. Received "
-                f"{iqm_scores.shape}, {mos.shape}, "
-                f"{rating_std.shape}."
-            )
-
-        absolute_error = np.abs(iqm_scores - mos)
-
-        is_outlier = absolute_error > 2.0 * rating_std
-
-        return is_outlier.mean()
-
-class CIAnalysis:
-
-    def __init__(self, ratings_dict, l2_distortions, file_dict, c_level=0.95):
-        self.ratings_dict = ratings_dict
-        self.c_level = c_level
-        self.ci_dict = self.process_ratings()
-        self.l2_distortions = l2_distortions
-        self.file_dict = file_dict
-    
-    def get_ci_tuple(self, ratings):
-        ci_entry = ConfidenceInterval(ratings, c_level=self.c_level)
-        lower, upper = ci_entry.ci()
-        return ci_entry.sample_mu, lower, upper
-    
-    def process_ratings(self):
-        print(f'====== performing participant bootstrapping computing confidence on the original MOS intervals for {self.c_level} confidence...====')
-        ci_dict = self.ratings_dict.copy()
-        for attack_name, v_dict in self.ratings_dict.items():
-            for delta, ratings in v_dict.items():
-                ci_dict[attack_name][delta] = self.get_ci_tuple(ratings)
-        return ci_dict
-    
-    def transform(self):
-        file, id, means, ci_lower, ci_upper = [],[],[],[], []
-        for attack_name, v_dict in self.ci_dict.items():
-            for delta, intervals in v_dict.items():
-                #id.append(f'{attack_name} : {round(self.l2_distortions[attack_name][delta], 2)}')
-                id.append(round(self.l2_distortions[attack_name][delta], 2))
-                file.append(f'{self.file_dict[attack_name][delta]}.png')
-                mean, lower, upper = intervals
-                means.append(mean)
-                ci_lower.append(lower)
-                ci_upper.append(upper)
-        zipped = sorted(zip(id, file, means, ci_lower, ci_upper), key=lambda x: x[0])
-        id, file, means, ci_lower, ci_upper = zip(*zipped)
-        return [f'{fi} : {str(i)}' for fi,i in zip(file,id)], means, ci_lower, ci_upper
-
-    def plot(self, visualize=False):
-
-        sns.set_theme(style="white", context="paper", font_scale=FONT_SCALE)
-        id, means, ci_lower, ci_upper = self.transform()
-        plt.figure(figsize=(14,6))
-        plt.bar(id, means, yerr=[np.array(means)-np.array(ci_lower), np.array(ci_upper)-np.array(means)], 
-                capsize=4, color='skyblue')
-        plt.xlabel("Image Index : L2-norm")
-        plt.xticks(rotation=90)
-        plt.ylabel("Mean Opinion Score (DSIS)")
-        plt.title("Confidence Intervals of the Mean Opinion of the Perceptual Evaluation of Adversarial Samples (95% CI)", fontweight='bold', fontsize=TITLE_SIZE)
-        plt.tight_layout()
-        if visualize:
-            plt.show()
-        else:
-            plt.savefig('./visualizations/participant_confidence_intervals.png')
+    print("###################################################################################\n")
 
 
-    def extend_results_with_intervals(self, dp_obj, table_path='./data/perc_eval/mos_results.csv'):
-        target_path = './data/perc_eval/mos_results_ci.csv'
-        with open(table_path, 'r') as source_f:
-            with open(target_path, 'w') as target_f:
-                source_csv = csv.reader(source_f)
-                target_csv = csv.writer(target_f)
-                initial_line = next(source_csv)
-                initial_line.append('ci_lower')
-                initial_line.append('ci_upper')
-                target_csv.writerow(initial_line)
-                for line in source_csv:
-                    file = int(line[0].split('/')[-1])
-                    attack, pert = dp_obj.file_2_info[file]
-                    mean, ci_lower, ci_upper = self.ci_dict[attack][pert]
-                    line.append(ci_lower)
-                    line.append(ci_upper)
-                    target_csv.writerow(line)
 
-            
-    
-class ConfidenceInterval:
+    print("###################################################################################\n")
 
-    def __init__(self, ratings, c_level=0.95):
-        self.ratings = ratings
-        self.n_ratings = len(ratings)
-        self.dof = self.n_ratings - 1 # degrees of freedom
-        self.t_alpha = (1 - c_level) # alpha value determined by confidence level
-        self.t_val = t.ppf(1 - (1 - c_level) / 2, self.dof)
-        self.sample_mu = sum(ratings) / self.n_ratings
-        self.sample_std = self.get_std()
+    print("Reject 0-hypothesis (H-0: no statistically resolvable difference between AHIQ and remaining metric):\n")
+    print(reject_h0, "\n")
 
-    def ci(self):
-        lower = self.sample_mu - (self.t_val * (self.sample_std/math.sqrt(self.n_ratings)))
-        upper = self.sample_mu + (self.t_val * (self.sample_std/math.sqrt(self.n_ratings)))
-        return lower, upper
+    print("###################################################################################\n")
 
-    def bootstrap_ci(self, data, n_bootstrap=10000, c_level=0.95, statistic=np.mean):
-        """Compute a bootstrap confidence interval for Likert-scale or any nonparametric data."""
-        data = np.array(data)
-        n = len(data)
-        boot_means = np.empty(n_bootstrap)
 
-        for i in range(n_bootstrap):
-            sample = np.random.choice(data, size=n, replace=True)
-            boot_means[i] = statistic(sample)
 
-        lower = np.percentile(boot_means, ((1 - c_level) / 2) * 100)
-        upper = np.percentile(boot_means, (1 - (1 - c_level) / 2) * 100)
-        return lower, upper
-    
-    def get_std(self):
-        return math.sqrt(sum([(rating - self.sample_mu)**2 for rating in self.ratings])/ self.dof)
+    return p_holm, p_raw, reject_h0
 
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', type=str, default='data.csv', help='set the path to data csv')
+    parser.add_argument('--resampling_target', type=str, default='crossed', help='set one of ["participants", "stimuli", "crossed"]')
+    parser.add_argument('--device', type=str, default='cpu', help='set the device')
+
     args = parser.parse_args()
 
-    data_processor = DataProcessor()
+    data_processor = DataProcessor(args.device)
 
-    # process survey results and compute MOS
+    # process survey results, compute MOS, compute survey statistics
     data_processor.process_data(args.data_path)
-    data_processor.compute_mos_per_sample()
-    #data_processor.rm_outliers()
-
+    data_processor.get_iqa_and_mos()
     data_processor.survey_statistics()
 
-    
-    
-    ratings_dict = data_processor.votes
-    l2_distortions = data_processor.l2_dict
-    file_dict = data_processor.f_dict
-
-    ci_analysis = CIAnalysis(ratings_dict, l2_distortions, file_dict)
+    ci_analysis = CIAnalysis(
+        ratings=data_processor.participants_clean,
+        l2_distortions=data_processor.l2_dict,
+        file_dict=data_processor.f_dict
+    )
     ci_analysis.plot(visualize=False)
     ci_analysis.extend_results_with_intervals(dp_obj=data_processor)
 
+    
+    ci_analysis.ci_df.drop("mos", axis=1, inplace=True)
+    results_df = pd.merge(data_processor.stimuli_df, ci_analysis.ci_df, on='file_id')
+    results_df.to_csv("./data/perc_eval/scores_and_mos.csv", index=False)
+
+
+
     print("\n====================================\n")
 
-    correlation_ci = data_processor.bootstrap_iqa_comparison()
+    #fitting_stability_results = data_processor.metric_collection.quantify_fitting_stability(data_processor.stimuli_df, RNG, n_repeats=100)
+
+
+    if args.resampling_target == 'participants':
+        correlation_ci = data_processor.participant_wise_bootstrap_iqa_comparison()
+    elif args.resampling_target == 'stimuli':
+        correlation_ci = data_processor.stimuli_wise_bootstrap_iqa_comparison()
+    elif args.resampling_target == 'crossed':
+        correlation_ci = data_processor.crossed_bootstrap_iqa_comparison()
+    else:
+        print('resampling target [{args.resampling_target}] not implemented.')
 
     print('done')
 
