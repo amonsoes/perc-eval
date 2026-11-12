@@ -20,7 +20,7 @@ class DatasetConstructor:
     def __init__(self):
         self.n = 0
         self.to_grey = T.Grayscale()
-        nodes = self.get_node_level_and_children(72)
+        nodes = self.get_node_level_and_children(100)
         self.classes = self.get_classes_from_nodes(nodes)
         self.data = ImgNetSubset()
         radial_dir = Path('./data/radial_profiles/')

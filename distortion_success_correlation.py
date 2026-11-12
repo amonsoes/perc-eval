@@ -20,8 +20,8 @@ normalize = T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
 def bootstrap_spearman(df):
 
-    x = df["MOS"].to_numpy()
-    y = df["Logit Margin Drop"].to_numpy()
+    x = df["mos"].to_numpy()
+    y = df["margin_drop"].to_numpy()
 
     rho = spearmanr(x, y).statistic
 
@@ -76,12 +76,13 @@ def signed_margin(logits, labels):
     return selected - strongest_other
 
 @torch.inference_mode()
-def compute_prediction_displacement(model, clean_input, adv_input):
+def compute_prediction_displacement(model, clean_input, adv_input, ground_truth):
     clean_logits = model(clean_input)
     adv_logits = model(adv_input)
 
     # Reference class: prediction for the clean image
     reference_class = clean_logits.argmax(dim=1)
+    ground_truth_logit = clean_logits.squeeze()[ground_truth]
 
     clean_margin = signed_margin(clean_logits, reference_class)
     adv_margin = signed_margin(adv_logits, reference_class)
@@ -101,7 +102,7 @@ def compute_prediction_displacement(model, clean_input, adv_input):
     )
 
     return {
-        "reference_class": reference_class.item(),
+        "reference_class": ground_truth,
         "clean_prediction": clean_pred.item(),
         "adv_prediction": adv_pred.item(),
         "prediction_flip": bool((clean_pred != adv_pred).item()),
@@ -141,7 +142,7 @@ def load_mos_table(path):
     df = pd.read_csv(path)
     return df
 
-def get_prediction_displacement_for_surrogate(model_name):
+def get_prediction_displacement_for_surrogate(model_name, ground_truth):
     
     n_classes = 1000
     loader = CNNLoader(args.pretrained, args.adversarial_pretrained_opt)
@@ -152,7 +153,9 @@ def get_prediction_displacement_for_surrogate(model_name):
     model = model.eval()
     model.model_name = args.model_name
 
-    sample_2_info = {k:{} for k,v in attack_2_surrogate.items() if v == model_name}
+    logs = []
+
+    #sample_2_info = {k:{} for k,v in attack_2_surrogate.items() if v == model_name}
 
     for attack, inds in dist_dict.items():
         if attack_2_surrogate[attack] == model_name:
@@ -166,22 +169,29 @@ def get_prediction_displacement_for_surrogate(model_name):
                 ori_image, image = load_image(img_path)
                 ori_adv_image, adv_image = load_image(adv_img_path)
 
-                prediction_discplacement = compute_prediction_displacement(model, image, adv_image)
+                reference_class = ground_truth[ground_truth["file_id"] == index]["class_id"].item()
+
+                prediction_discplacement = compute_prediction_displacement(model, image, adv_image, reference_class)
+                
 
                 line_for_file = mos_table[mos_table["file_id"] == attack_pert]
                 mos_value = line_for_file["mos"]
                 prediction_discplacement['mos'] = mos_value.item()
+                prediction_discplacement['ci_lower'] = line_for_file['ci_lower'].item()
+                prediction_discplacement['ci_upper'] = line_for_file['ci_upper'].item()
                 prediction_discplacement['sample'] = str(index) + '.png'
-                prediction_discplacement['attack']
-                prediction_discplacement['perturbation_group'] = pert_dist
+                prediction_discplacement['attack'] = attack
+                prediction_discplacement['perturbation_group'] = float(pert_dist)
                 prediction_discplacement['l2'] = (ori_image - ori_adv_image).pow(2).sum().sqrt().item()
                 prediction_discplacement['surrogate'] = model_name
-                sample_2_info[attack][str(pert_dist)] =  prediction_discplacement
 
-    return sample_2_info
+                logs.append(prediction_discplacement)
 
-def visualize_pred_displacement(info_dict, model_name):
+    return logs
 
+def visualize_pred_displacement(prediction_displacement_df, model_name):
+
+    prediction_displacement_df = prediction_displacement_df.loc[prediction_displacement_df["surrogate"] == model_name]
     if model_name == 'resnet':
         model_name = 'ResNet'
     elif model_name == 'deit':
@@ -191,33 +201,23 @@ def visualize_pred_displacement(info_dict, model_name):
 
     sns.set_theme(style="whitegrid", context="paper", font_scale=1.6)
 
-    data = []
-    for attack, perts in info_dict.items():
-        for pert, infos in perts.items():
-            data.append(infos)
+    prediction_displacement_df.sort_values(by='mos', inplace=True)
 
-    data = sorted(data, key=lambda x: x['MOS'])
-
-    mos_scores = [x['MOS'] for x in data]
-    margin_gap_scores = [x['margin_drop'] for x in data]
-    pred_flipped = [x['prediction_flip'] for x in data]
-    ci_lower = [x['ci_lower'] for x in data]
-    ci_upper = [x['ci_upper'] for x in data]
-
-    df = pd.DataFrame(
-        zip(mos_scores,margin_gap_scores,pred_flipped, ci_lower, ci_upper), 
-        columns=['MOS', 'Logit Margin Drop', 'Prediction Flip', 'Lower CI Bound', 'Upper CI Bound']
-        )
+    df = prediction_displacement_df[['mos', 'margin_drop', 'prediction_flip', 'ci_lower', 'ci_upper']]
 
     fig, ax = plt.subplots(figsize=(8.0, 5.6), constrained_layout=True)
 
+    x = df["mos"].to_numpy(dtype=float)
+    y = df["margin_drop"].to_numpy(dtype=float)
+    lower = df["ci_lower"].to_numpy(dtype=float)
+    upper = df["ci_upper"].to_numpy(dtype=float)
+
+    xerr = np.vstack((x - lower, upper - x))
+
     ax.errorbar(
-    df["MOS"],
-    df["Logit Margin Drop"],
-    xerr=[
-        df["MOS"] - df["Lower CI Bound"],
-        df["Upper CI Bound"] - df["MOS"],
-    ],
+    x,
+    y,
+    xerr=xerr,
     fmt="none",
     ecolor="0.75",
     elinewidth=0.8,
@@ -226,12 +226,12 @@ def visualize_pred_displacement(info_dict, model_name):
     zorder=1,
     )
 
-    unchanged = df[~df["Prediction Flip"]]
-    changed = df[df["Prediction Flip"]]
+    unchanged = df[~df["prediction_flip"]]
+    changed = df[df["prediction_flip"]]
 
     ax.scatter(
-        unchanged["MOS"],
-        unchanged["Logit Margin Drop"],
+        unchanged["mos"],
+        unchanged["margin_drop"],
         marker="o",
         s=48,
         facecolors="white",
@@ -243,8 +243,8 @@ def visualize_pred_displacement(info_dict, model_name):
 
     # Filled crosses: prediction changed
     ax.scatter(
-        changed["MOS"],
-        changed["Logit Margin Drop"],
+        changed["mos"],
+        changed["margin_drop"],
         marker="X",
         s=58,
         color="#D55E00",
@@ -257,8 +257,8 @@ def visualize_pred_displacement(info_dict, model_name):
     # Robust descriptive trend with bootstrap confidence band
     sns.regplot(
         data=df,
-        x="MOS",
-        y="Logit Margin Drop",
+        x="mos",
+        y="margin_drop",
         scatter=False,
         robust=True,
         ci=95,
@@ -319,6 +319,7 @@ def visualize_pred_displacement(info_dict, model_name):
     ax.grid(axis="x", visible=False)
     sns.despine(ax=ax)
 
+    plt.savefig(f"./saves/visualizations/margin_displacement_{model_name}.png")
     plt.show()
     print('done')
 
@@ -329,6 +330,7 @@ if __name__ == '__main__':
     path_real_images = "./survey/data/perc_eval/images_new/"
     path_adv_images = "./survey/data/perc_eval/"
     mos_table = load_mos_table("./survey/data/perc_eval/scores_and_mos.csv")
+    ground_truth = pd.read_csv("survey/data/perc_eval/labels_survey.csv")
 
     dist_dict = {
 
@@ -405,12 +407,18 @@ if __name__ == '__main__':
 
         }
 
-    sample_2_info_resnet = get_prediction_displacement_for_surrogate("resnet")
-    sample_2_info_deit = get_prediction_displacement_for_surrogate("deit")
+    logs = get_prediction_displacement_for_surrogate("resnet", ground_truth)
+    logs_deit = get_prediction_displacement_for_surrogate("deit", ground_truth)
+    logs.extend(logs_deit)
+    prediction_displacement_df = pd.DataFrame(logs)
+    prediction_displacement_df = prediction_displacement_df.reindex(['surrogate','attack', 'perturbation_group', 'l2', 'mos','ci_lower', 'ci_upper','reference_class', 'clean_prediction', 'adv_prediction','prediction_flip', 'clean_margin', 'adv_margin', 'margin_drop','clean_reference_probability', 'adv_reference_probability', 'probability_drop', 'sample'], axis=1)
+    prediction_displacement_df.sort_values(by=['surrogate', 'perturbation_group'], inplace=True, ascending=True)
 
+    visualize_pred_displacement(prediction_displacement_df, 'resnet')
+    visualize_pred_displacement(prediction_displacement_df, 'deit')
 
-    visualize_pred_displacement(sample_2_info_resnet, 'resnet')
-    visualize_pred_displacement(sample_2_info_deit, 'deit')
+    prediction_displacement_df.to_csv("./saves/reports/survey_reports/adv_properties_survey_samples.csv", index=False)
+
 
 
 
