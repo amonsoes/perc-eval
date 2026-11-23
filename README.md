@@ -88,12 +88,12 @@ python3 compare_distortions.py
 - Run the command above.
 
 
-## Replicate Perturbation Diversity Experiments
+## Replicate Margin Displacement Experiments
 
-The file 'distortion_success_correlation.py' enables the reproduction of the experiment investigating the relationship between logit displacement and perceived distortion (MOS)
+The file 'dist_eff_correlation.py' enables the reproduction of the experiment investigating the relationship between logit displacement and perceived distortion (MOS)
 
 ```
-python3 distortion_success_correlation.py
+python3 dist_eff_correlation.py
 ```
 
 

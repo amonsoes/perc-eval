@@ -7,6 +7,7 @@ import seaborn as sns
 
 from scipy.optimize import curve_fit
 from scipy.stats import pearsonr, spearmanr
+from dataclasses import dataclass
 
 from sklearn.model_selection import KFold, GroupKFold, RepeatedKFold
 from scipy.special import expit
@@ -52,6 +53,21 @@ METRIC_DIRECTION = {
     "topiq_fr": -1,
 }
 
+LOWER_BOUNDS_5PL = np.array([
+    0.0,    # a
+    0.1,    # b
+    -0.25,  # c
+    0.0,    # d
+    -0.5,   # g
+])
+
+UPPER_BOUNDS_5PL = np.array([
+    2.0,    # a
+    50.0,   # b
+    1.25,   # c
+    2.0,    # d
+    1.5,    # g
+])
 
 
 class MetricCollection:
@@ -60,64 +76,99 @@ class MetricCollection:
         self.mos_scores = image_stats['mos'].to_numpy()
         self.ig_statistics = image_stats
 
-    def cross_validated_5pl(
+    def __call__(
         self,
         raw_scores,
         mos_scores,
-        n_splits=5,
+        rating_std,
         folds=None,
+        visualize=False,
     ):
+        
+        # map by logistic curve
+
         metric_name = raw_scores.name
+        transformed_scores = self.fit_and_transform(raw_scores, mos_scores, folds=folds)
 
-        raw_scores = np.asarray(raw_scores, dtype=float)
-        mos = np.asarray(mos_scores, dtype=float)
+        # pearson
+        r_pearson = pearsonr(transformed_scores, mos_scores).statistic
+    
+        #rsme
+        r_rsme = MetricCollection.rmse(transformed_scores, mos_scores)
 
+        # spearman rank order correlation
+        r_spearman = MetricCollection.direction_corrected_srocc(raw_scores, mos_scores, metric_name)
 
-        p0 = [1.0, 5.0, np.median(raw_scores), 0.0, np.mean(mos)]
+        # outlier ratio
+        r_or = MetricCollection.outlier_ratio(transformed_scores, mos_scores, rating_std=rating_std)
 
-        mapped_predictions = np.full(
-            len(raw_scores),
-            np.nan,
-        )
-
-        if folds == None:
-            folds = KFold(
-                n_splits=n_splits,
-                shuffle=True,
-                random_state=RANDOM_SEED,
+        if (
+            visualize
+            and metric_name
+            == BEST_METRIC_HYPOTHESIS
+        ):
+            self.visualize_curve(
+                raw_scores,
+                mos_scores,
             )
 
-            fold_indices = folds.split(raw_scores)
+        results =  [r_pearson, r_spearman, r_rsme, r_or]
+        return [round(i, 5) for i in results]
 
-        else:
+    '''def fit_and_get_params_for_metric(
+        self,
+        train_indices,
+        test_indices,
+        raw_scores,
+        mos,
+        metric_name,
+    ):
+        # Align direction before fold-specific normalization.
+        aligned_scores = (
+            METRIC_DIRECTION[metric_name]
+            * np.asarray(raw_scores, dtype=float)
+        )
 
-            fold_indices = folds
+        train, test, constant = MetricCollection.normalize_scores(
+            aligned_scores,
+            train_indices,
+            test_indices,
+            metric_name,
+        )
 
-        for train_indices, test_indices in fold_indices:
+        if constant:
+            raise FivePLFitError(
+                f"Constant training scores for metric={metric_name}"
+            )
 
-            transformed_test_scores, params = self.fit_and_get_params_for_metric(train_indices, test_indices, raw_scores, mos, metric_name, p0)
-            mapped_predictions[test_indices] = transformed_test_scores
+        train_target = mos[train_indices]
 
-        return mapped_predictions, params
-
-    def fit_and_get_params_for_metric(self, train_indices, test_indices, raw_scores, mos, metric_name, p0):
-
-        train, test, _ = MetricCollection.normalize_scores(raw_scores, train_indices, test_indices, metric_name)
-        train_target, test_target = mos[train_indices], mos[test_indices]
+        # Initialized on the fold-specific normalized scale.
+        p0 = np.array([
+            1.0,                    # a
+            5.0,                    # b
+            np.median(train),       # c: normalized training midpoint
+            0.0,                    # d
+            np.mean(train_target),  # g: training MOS centre
+        ])
 
         try:
             parameters, _ = curve_fit(
                 MetricCollection.logistic_5pl,
                 train,
                 train_target,
-                p0,
-                maxfev=1000000,
+                p0=p0,
+                maxfev=1_000_000,
                 method="trf",
                 x_scale="jac",
-
             )
 
-            transformed_test_scores = MetricCollection.logistic_5pl(test, *parameters)
+            transformed_test_scores = (
+                MetricCollection.logistic_5pl(
+                    test,
+                    *parameters,
+                )
+            )
 
         except (
             RuntimeError,
@@ -126,10 +177,116 @@ class MetricCollection:
             np.linalg.LinAlgError,
         ) as exc:
             raise FivePLFitError(
-                f"5PL fit failed for metric={metric_name}. "
+                f"5PL fit failed for metric={metric_name}"
             ) from exc
 
-        return transformed_test_scores, parameters
+        return transformed_test_scores, parameters, (train, test)'''
+
+    def fit_and_get_params_for_metric(
+        self,
+        train_indices,
+        test_indices,
+        raw_scores,
+        mos,
+        metric_name,
+    ):
+        raw_scores = np.asarray(
+            raw_scores,
+            dtype=float,
+        )
+        mos = np.asarray(
+            mos,
+            dtype=float,
+        )
+
+        # Ensure that larger values always indicate more degradation.
+        aligned_scores = (
+            METRIC_DIRECTION[metric_name]
+            * raw_scores
+        )
+
+        train, test, constant = (
+            MetricCollection.normalize_scores(
+                aligned_scores,
+                train_indices,
+                test_indices,
+                metric_name,
+            )
+        )
+
+        if constant:
+            raise FivePLFitError(
+                "Constant training scores for "
+                f"metric={metric_name}"
+            )
+
+        train_target = mos[train_indices]
+
+        # Constructed exclusively from the fold's training data.
+        p0 = np.array([
+            1.0,
+            5.0,
+            np.median(train),
+            0.0,
+            np.mean(train_target),
+        ])
+
+        # Keep the initial point strictly inside the bounds.
+        bound_epsilon = 1e-8
+
+        p0 = np.clip(
+            p0,
+            LOWER_BOUNDS_5PL + bound_epsilon,
+            UPPER_BOUNDS_5PL - bound_epsilon,
+        )
+
+        try:
+            parameters, covariance = curve_fit(
+                MetricCollection.logistic_5pl,
+                train,
+                train_target,
+                p0=p0,
+                bounds=(
+                    LOWER_BOUNDS_5PL,
+                    UPPER_BOUNDS_5PL,
+                ),
+                maxfev=1_000_000,
+                method="trf",
+                x_scale="jac",
+            )
+
+            transformed_test_scores = (
+                MetricCollection.logistic_5pl(
+                    test,
+                    *parameters,
+                )
+            )
+
+            if not np.all(
+                np.isfinite(transformed_test_scores)
+            ):
+                raise FloatingPointError(
+                    "5PL produced non-finite predictions"
+                )
+
+        except (
+            RuntimeError,
+            ValueError,
+            FloatingPointError,
+            np.linalg.LinAlgError,
+        ) as exc:
+            raise FivePLFitError(
+                f"5PL fit failed for metric={metric_name}"
+            ) from exc
+
+        return {
+            "test_predictions": transformed_test_scores,
+            "parameters": parameters,
+            "covariance": covariance,
+            "normalized_train": train,
+            "normalized_test": test,
+            "p0": p0,
+        }
 
     @staticmethod
     def logistic_5pl(x, a, b, c, d, g):
@@ -140,9 +297,16 @@ class MetricCollection:
         )
 
     @staticmethod
-    def normalize_scores(raw_scores, train_idx, test_idx, metric):
-
-        constant = False
+    def normalize_scores(
+        raw_scores,
+        train_idx,
+        test_idx,
+        metric=None,
+    ):
+        raw_scores = np.asarray(
+            raw_scores,
+            dtype=float,
+        )
 
         x_train_raw = raw_scores[train_idx]
         x_test_raw = raw_scores[test_idx]
@@ -151,64 +315,183 @@ class MetricCollection:
         x_max = x_train_raw.max()
         x_span = x_max - x_min
 
-        if x_span <= 1e-12:
-            constant = True
+        if (
+            not np.isfinite(x_span)
+            or x_span <= 1e-12
+        ):
+            return None, None, True
 
-        x_train = (x_train_raw - x_min) / x_span
-        x_test = (x_test_raw - x_min) / x_span
+        x_train = (
+            x_train_raw - x_min
+        ) / x_span
 
-        return x_train, x_test, constant
+        x_test = (
+            x_test_raw - x_min
+        ) / x_span
+
+        return x_train, x_test, False
     
     @staticmethod
     def hyperplane(x, slope, intercept):
         return slope * x + intercept
     
-    def fit_and_transform(self, iqm_scores, mos_scores, visualize=False, is_original_mos=False, folds=None):
-
-        sns.set_theme(
-            style="whitegrid",
-            context="paper",
-            font_scale=FONT_SCALE
-        )
+    def fit_and_transform(self, iqm_scores, mos_scores, folds=None):
 
         print(f"\n\t cross-validation logistic curve fit for metric {iqm_scores.name.upper()}")
 
-        transformed_iqm_scores, params= self.cross_validated_5pl(raw_scores=iqm_scores, mos_scores=mos_scores, n_splits=5, folds=folds)
+        raw_scores=iqm_scores
+        n_splits=5
 
-        x_fit = np.linspace(min(iqm_scores), max(iqm_scores), 200)
-        y_fit = self.logistic_5pl(x_fit, *params)
+        metric_name = raw_scores.name
+        raw_scores = np.asarray(raw_scores, dtype=float)
+        mos = np.asarray(mos_scores, dtype=float)
 
-        if visualize or is_original_mos:
-            plt.figure(figsize=(8, 5))
-            plt.scatter(
-                iqm_scores, 
-                mos_scores,
-                marker="o",
-                s=48,
-                facecolors="white",
-                edgecolors="#0072B2",
-                linewidths=1.3,
-                label="IQA vs. MOS",
-                zorder=3)
-            plt.plot(x_fit, y_fit, color='grey', label='Fitted 5PL Curve', linewidth=2)
-            plt.xlabel(f'{iqm_scores.name.upper()} score')
-            plt.ylabel('MOS')
-            plt.title(f'5-Parameter Logistic Fit to {(iqm_scores.name.upper())} vs. MOS', fontweight='bold', fontsize=TITLE_SIZE)
-            plt.legend()
-            plt.grid(True)
-            plt.tight_layout()
+        mapped_predictions = np.full(
+            len(raw_scores),
+            np.nan,
+        )
 
-            if visualize:
-                plt.show()
-            if is_original_mos:
-                plt.savefig(f'./visualizations/{iqm_scores.name.upper()}.png')
+        if folds == None and n_splits > 1:
 
-        return transformed_iqm_scores
+            # if folds is None, No Group K FOld was used before, generate 5 folds
+            
+            folds = KFold(
+                n_splits=n_splits,
+                shuffle=True,
+                random_state=RANDOM_SEED,
+            )
+
+            fold_indices = folds.split(raw_scores)
+
+        else:
+
+            # if folds !=, that means Group K fold passed the fold object. iterate over folds
+            fold_indices = folds
+
+        for train_indices, test_indices in fold_indices:
+
+            fitting_results = self.fit_and_get_params_for_metric(train_indices, test_indices, raw_scores, mos, metric_name)
+            mapped_predictions[test_indices] = fitting_results['test_predictions']
+
+        return mapped_predictions
     
-    def minmax(self, iqm_scores):
+    """def minmax(self, iqm_scores):
         maxi = iqm_scores.max()
         mini = iqm_scores.min()
-        return (iqm_scores - mini) / (maxi - mini)
+        return (iqm_scores - mini) / (maxi - mini)"""
+
+    def visualize_curve(
+        self,
+        raw_scores,
+        mos_scores,
+    ):
+        sns.set_theme(
+            style="whitegrid",
+            context="paper",
+            font_scale=FONT_SCALE,
+        )
+
+        metric_name = raw_scores.name
+
+        raw_scores = np.asarray(
+            raw_scores,
+            dtype=float,
+        )
+        mos = np.asarray(
+            mos_scores,
+            dtype=float,
+        )
+
+        # This is a descriptive full-data fit for visualization only.
+        # It is not used to calculate PLCC, RMSE, or OR.
+        all_indices = np.arange(
+            len(raw_scores)
+        )
+
+        fitting_results = (
+            self.fit_and_get_params_for_metric(
+                train_indices=all_indices,
+                test_indices=all_indices,
+                raw_scores=raw_scores,
+                mos=mos,
+                metric_name=metric_name,
+            )
+        )
+
+        params = fitting_results[
+            "parameters"
+        ]
+
+        normalized_scores = fitting_results[
+            "normalized_test"
+        ]
+
+        x_fit = np.linspace(
+            normalized_scores.min(),
+            normalized_scores.max(),
+            200,
+        )
+
+        y_fit = self.logistic_5pl(
+            x_fit,
+            *params,
+        )
+
+        plt.figure(figsize=(8, 5))
+
+        plt.scatter(
+            normalized_scores,
+            mos,
+            marker="o",
+            s=48,
+            facecolors="white",
+            edgecolors="#0072B2",
+            linewidths=1.3,
+            label="IQA vs. MOS",
+            zorder=3,
+        )
+
+        plt.plot(
+            x_fit,
+            y_fit,
+            color="grey",
+            label="Fitted 5PL curve",
+            linewidth=2,
+        )
+
+        plt.xlabel(
+            f"Direction-aligned normalized "
+            f"{metric_name.upper()} score"
+        )
+        plt.ylabel("MOS")
+        plt.title(
+            "5-Parameter Logistic Fit to "
+            f"{metric_name.upper()} vs. MOS",
+            fontweight="bold",
+            fontsize=TITLE_SIZE,
+        )
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+
+        output_directory = Path(
+            "./visualizations"
+        )
+        output_directory.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        plt.savefig(
+            output_directory
+            / f"{metric_name.upper()}.png",
+            dpi=300,
+            bbox_inches="tight",
+        )
+
+        plt.close()
+
+
 
     """@staticmethod
     def fit_data(iqm_scores, mos_scores):
@@ -244,29 +527,6 @@ class MetricCollection:
         slope = numerator / denominator
         intercept = (Sy - slope * Sx) / n
         return slope, intercept
-
-    def __call__(self, raw_scores, mos_scores, rating_std, visualize=False, is_original_mos=False, folds=None):
-        
-        # map by logistic curve
-
-        metric_name = raw_scores.name
-        transformed_scores = self.fit_and_transform(raw_scores, mos_scores, visualize=visualize, is_original_mos=is_original_mos, folds=folds)
-
-        # pearson
-        r_pearson = pearsonr(transformed_scores, mos_scores).statistic
-    
-        #rsme
-        r_rsme = MetricCollection.rmse(transformed_scores, mos_scores)
-
-        # spearman rank order correlation
-        r_spearman = MetricCollection.direction_corrected_srocc(raw_scores, mos_scores, metric_name)
-
-        # outlier ratio
-        r_or = MetricCollection.outlier_ratio(transformed_scores, mos_scores, rating_std=rating_std)
-
-        results =  [r_pearson, r_spearman, r_rsme, r_or]
-        return [round(i, 5) for i in results]
-
 
     @staticmethod
     def direction_corrected_srocc(iqm_scores, mos_scores, metric_name):
@@ -359,7 +619,6 @@ class MetricCollection:
         rng,
         n_splits=5,
         n_repeats=100,
-        n_starts=10,
     ):
         # ---------------------------------------------------------
         # Configuration
@@ -379,30 +638,6 @@ class MetricCollection:
 
         mos = raw_scores_df["mos"].to_numpy(dtype=float)
         rating_std = raw_scores_df["rating_std"].to_numpy(dtype=float)
-
-        default_start = np.array([
-            1.0,  # a
-            5.0,  # b
-            0.5,  # c
-            0.0,  # d
-            0.5,  # g
-        ])
-
-        lower_bounds_5pl = np.array([
-            0.0,    # a
-            0.1,    # b
-            -0.25,   # c
-            0.0,    # d
-            -0.5,    # g
-        ])
-
-        upper_bounds_5pl = np.array([
-            2.0,   # a
-            50.0,   # b
-            1.25,  # c
-            2.0,   # d
-            1.5,   # g
-        ])
 
         # One seed for the complete repeated-CV design.
         split_seed = int(
@@ -461,123 +696,51 @@ class MetricCollection:
                 y_test = mos[test_idx]
 
                 for metric in metric_columns:
-                    x_raw = raw_scores_df[
+
+                    raw_scores = raw_scores_df[
                         metric
                     ].to_numpy(dtype=float)
 
-                    # Align all metrics so that larger values mean
-                    # greater degradation.
-                    direction = METRIC_DIRECTION[metric]
-                    x_raw = direction * x_raw
-
-                    # ---------------------------------------------
-                    # Fold-specific normalization
-                    # ---------------------------------------------
-
-                    x_train, x_test, constant = MetricCollection.normalize_scores(x_raw, train_idx, test_idx, metric)
-
-                    if constant:
-                        fold_records.append({
-                            "repetition": repetition,
-                            "fold": fold_nr,
-                            "metric": metric,
-                            "converged": False,
-                            "failure_reason": (
-                                "constant training scores"
-                            ),
-                        })
-                        continue
-
-                    # ---------------------------------------------
-                    # Multi-start fitting
-                    # ---------------------------------------------
-                    initializations = [
-                        default_start.copy()
-                    ]
-
-                    for _ in range(n_starts - 1):
-                        initializations.append(
-                            self.sample_5pl_initialization(
-                                rng,
-                                lower_bounds_5pl,
-                                upper_bounds_5pl,
-                            )
+                    try:
+                        fit = self.fit_and_get_params_for_metric(
+                            train_indices=train_idx,
+                            test_indices=test_idx,
+                            raw_scores=raw_scores,
+                            mos=mos,
+                            metric_name=metric,
                         )
 
-                    best_fit = None
-                    successful_starts = 0
-
-                    for start_id, p0 in enumerate(initializations):
-                        try:
-                            params, covariance = curve_fit(
-                                self.logistic_5pl,
-                                x_train,
-                                y_train,
-                                p0=p0,
-                                bounds=(
-                                    lower_bounds_5pl,
-                                    upper_bounds_5pl,
-                                ),
-                                maxfev=1000000,
-                            )
-
-                            train_predictions = (
-                                self.logistic_5pl(
-                                    x_train,
-                                    *params,
-                                )
-                            )
-
-                            if not np.all(np.isfinite(train_predictions)):
-                                continue
-
-                            training_sse = np.sum((train_predictions - y_train) ** 2)
-
-                            successful_starts += 1
-
-                            if (
-                                best_fit is None
-                                or training_sse
-                                < best_fit["training_sse"]
-                            ):
-                                best_fit = {
-                                    "params": params,
-                                    "covariance": covariance,
-                                    "training_sse": (
-                                        training_sse
-                                    ),
-                                    "start_id": start_id,
-                                }
-
-                        except (
-                            RuntimeError,
-                            ValueError,
-                            FloatingPointError,
-                        ):
-                            continue
-
-                    # ---------------------------------------------
-                    # All starts failed
-                    # ---------------------------------------------
-                    if best_fit is None:
+                    except FivePLFitError as exc:
                         fold_records.append({
                             "repetition": repetition,
                             "fold": fold_nr,
                             "metric": metric,
                             "converged": False,
-                            "failure_reason": (
-                                "all initializations failed"
-                            ),
+                            "failure_reason": str(exc),
                             "successful_starts": 0,
+                            "selected_start": np.nan,
                         })
+
                         continue
 
-                    params = best_fit["params"]
+                    params = fit["parameters"]
+                    covariance = fit["covariance"]
+                    x_train = fit["normalized_train"]
+                    x_test = fit["normalized_test"]
+                    test_predictions = fit["test_predictions"]
 
-                    test_predictions = self.logistic_5pl(
-                        x_test,
+                    train_predictions = self.logistic_5pl(
+                        x_train,
                         *params,
                     )
+
+                    training_sse = np.sum(
+                        (train_predictions - y_train) ** 2
+                    )
+
+                    repetition_predictions[
+                        metric
+                    ][test_idx] = test_predictions
 
                     repetition_predictions[
                         metric
@@ -589,21 +752,21 @@ class MetricCollection:
                     parameter_tolerance = (
                         1e-5
                         * (
-                            upper_bounds_5pl
-                            - lower_bounds_5pl
+                            UPPER_BOUNDS_5PL
+                            - LOWER_BOUNDS_5PL
                         )
                     )
 
                     at_lower_bound = np.isclose(
                         params,
-                        lower_bounds_5pl,
+                        LOWER_BOUNDS_5PL,
                         atol=parameter_tolerance,
                         rtol=0.0,
                     )
 
                     at_upper_bound = np.isclose(
                         params,
-                        upper_bounds_5pl,
+                        UPPER_BOUNDS_5PL,
                         atol=parameter_tolerance,
                         rtol=0.0,
                     )
@@ -641,13 +804,9 @@ class MetricCollection:
 
                     covariance_condition = np.nan
 
-                    if np.all(np.isfinite(
-                        best_fit["covariance"]
-                    )):
-                        covariance_condition = (
-                            np.linalg.cond(
-                                best_fit["covariance"]
-                            )
+                    if np.all(np.isfinite(covariance)):
+                        covariance_condition = np.linalg.cond(
+                            covariance
                         )
 
                     fold_records.append({
@@ -658,12 +817,10 @@ class MetricCollection:
                         "converged": True,
                         "failure_reason": None,
 
-                        "successful_starts": (
-                            successful_starts
-                        ),
-                        "selected_start": (
-                            best_fit["start_id"]
-                        ),
+                        # One deterministic initialization was used.
+                        "successful_starts": 1,
+                        "selected_start": 0,
+
 
                         "a": a,
                         "b": b,
@@ -671,9 +828,7 @@ class MetricCollection:
                         "d": d,
                         "g": g,
 
-                        "training_sse": (
-                            best_fit["training_sse"]
-                        ),
+                        "training_sse": training_sse,
                         "test_rmse": MetricCollection.rmse(test_predictions, y_test),
 
                         "parameter_at_bound": (

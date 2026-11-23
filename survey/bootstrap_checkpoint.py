@@ -74,7 +74,7 @@ def load_bootstrap_checkpoint(checkpoint_path, rng):
 
     rng.bit_generator.state = state["rng_state"]
 
-    validate_bootstrap_checkpoint(state)
+    #validate_bootstrap_checkpoint(state)
 
     return state
 

@@ -22,7 +22,7 @@ from pathlib import Path
 
 from validate_frqa import FRQA
 from metric_collection import MetricCollection
-from utils import FivePLFitError, build_votes_from_ratings
+from utils import FivePLFitError, build_votes_from_ratings, combine_pe_ci
 from ci_analysis import CIAnalysis
 
 from bootstrap_checkpoint import save_bootstrap_checkpoint, load_bootstrap_checkpoint
@@ -47,7 +47,7 @@ BS_CRS_CHECKPOINT_PATH = Path(
     "./saves/crossed_bootstrap_iqa_checkpoint.pkl"
 )
 
-CHECKPOINT_EVERY = 20
+CHECKPOINT_EVERY = 25
 N_BOOTSTRAPS = 5000
 BEST_METRIC_HYPOTHESIS = 'topiq_fr' # post-hoc-hypothesis based on point estimates
 
@@ -106,7 +106,7 @@ class DataProcessor:
                     "mad": "MAD",
                     "ssim": "SSIM",
                     "psnr": "PSNR",
-                    "ssim.1": "MS-SSIM",
+                    "ms_ssim": "MS-SSIM",
                     "vif": "VIF",
                     "dists": "DISTS",
                     "lpips": "LPIPS",
@@ -1265,15 +1265,11 @@ class DataProcessor:
 
         return (extreme.sum() + 1) / (len(bootstrap_estimates) + 1)
 
-    def get_original_statistics(
-            self,
-            visualize,
+    def get_original_statistics(self):
 
-    ):
         # get original MOS, IG-STD, POINT ESTIMATES
         point_estimates = self.compare_to_iqa(
-            original_mos=self.original_subjective_statistics, 
-            visualize=visualize
+            original_mos=self.original_subjective_statistics,
             )
 
         
@@ -1337,10 +1333,10 @@ class DataProcessor:
         p_percentile = [(alpha_value*100) / 2, 100 - (alpha_value*100) / 2]
         
         # get original POINT ESTIMATES
-        original_stats = self.get_original_statistics(visualize=visualize)
+        original_stats = self.get_original_statistics()
         point_estimates = original_stats["point_estimates"]
         point_estimate_plcc_freq, point_estimate_srocc_freq, freq_comps, freq_diffs = original_stats["frequency_point_estimates"]
-        point_estimate_plcc_lum, point_estimate_srocc_lum, y_comps, y_diffs = original_stats["frequency_point_estimates"]
+        point_estimate_plcc_lum, point_estimate_srocc_lum, y_comps, y_diffs = original_stats["lum_point_estimates"]
         metric_order = original_stats["metric_order"]
 
         print('\nOBTAINED POINT ESTIMATES ON ORIGINAL MOS DATA:\n')
@@ -1594,10 +1590,10 @@ class DataProcessor:
         p_percentile = [(alpha_value*100) / 2, 100 - (alpha_value*100) / 2]
         
         # get original POINT ESTIMATES
-        original_stats = self.get_original_statistics(visualize=visualize)
+        original_stats = self.get_original_statistics()
         point_estimates = original_stats["point_estimates"]
         point_estimate_plcc_freq, point_estimate_srocc_freq, freq_comps, freq_diffs = original_stats["frequency_point_estimates"]
-        point_estimate_plcc_lum, point_estimate_srocc_lum, y_comps, y_diffs = original_stats["frequency_point_estimates"]
+        point_estimate_plcc_lum, point_estimate_srocc_lum, y_comps, y_diffs = original_stats["lum_point_estimates"]
         metric_order = original_stats["metric_order"]
         
         print('\nOBTAINED POINT ESTIMATES ON ORIGINAL MOS DATA:\n')
@@ -1827,7 +1823,8 @@ class DataProcessor:
             image_col="file_id",
             mos_col="MOS",
             alpha_value = SIGNIFICANCE_LEVEL,
-            visualize=False
+            visualize=False,
+            residual_analysis_only=False,
         ):
 
         print("\n=========== computing CI for correlation stats PLCC, SROCC and OR with two-way crossed resampling ==========\n")
@@ -1845,10 +1842,10 @@ class DataProcessor:
         p_percentile = [(alpha_value*100) / 2, 100 - (alpha_value*100) / 2]
 
         # get original POINT ESTIMATES
-        original_stats = self.get_original_statistics(visualize=visualize)
+        original_stats = self.get_original_statistics()
         point_estimates = original_stats["point_estimates"]
         point_estimate_plcc_freq, point_estimate_srocc_freq, freq_comps, freq_diffs = original_stats["frequency_point_estimates"]
-        point_estimate_plcc_lum, point_estimate_srocc_lum, y_comps, y_diffs = original_stats["frequency_point_estimates"]
+        point_estimate_plcc_lum, point_estimate_srocc_lum, y_comps, y_diffs = original_stats["lum_point_estimates"]
         metric_order = original_stats["metric_order"]
         
         print('\nOBTAINED POINT ESTIMATES ON ORIGINAL MOS DATA:\n')
@@ -1946,13 +1943,16 @@ class DataProcessor:
                     bootstrapped_mos_data, 
                     visualize, 
                     is_original_mos=False, 
-                    kfold_grouping=True
+                    kfold_grouping=True,
+                    residual_analysis_only=residual_analysis_only
                 )
 
-                for e, metric in enumerate(bootstrap_results.keys()):
-                    bootstrap_results[metric]['plcc'].append(stats_on_transformed_metrics.iloc[0,e])
-                    bootstrap_results[metric]['srocc'].append(stats_on_transformed_metrics.iloc[1,e])
-                    bootstrap_results[metric]['or'].append(stats_on_transformed_metrics.iloc[3,e])
+                if not residual_analysis_only:
+
+                    for e, metric in enumerate(bootstrap_results.keys()):
+                        bootstrap_results[metric]['plcc'].append(stats_on_transformed_metrics.iloc[0,e])
+                        bootstrap_results[metric]['srocc'].append(stats_on_transformed_metrics.iloc[1,e])
+                        bootstrap_results[metric]['or'].append(stats_on_transformed_metrics.iloc[3,e])
 
                 # compute frequency correlation with resampled MOS
 
@@ -2000,54 +2000,53 @@ class DataProcessor:
                 )
                 continue
 
-
         print('\nComputing alpha-Level quantile from collected bootstraps for every metric..\n')
 
+        if not residual_analysis_only:
+
+            ci_at_percentile = {metric: {stat:((np.round(np.percentile(iter_vals, p_percentile), decimals=3))) for stat, iter_vals in iter_stats.items()} for metric, iter_stats in bootstrap_results.items()}
+            bootstrap_results_df = pd.DataFrame(bootstrap_results)
+            ci_at_percentile = pd.DataFrame(ci_at_percentile)
+            print('Metric confidence intervals:\n')
+            print(ci_at_percentile)
+            (ci_at_percentile.T).to_csv("./survey_stats/CI_metrics.csv")
+            print('Done.\n')
+
+            ######################
+
+            print('\nChecking suspicious point-estimate-to-bootstrap ci metric-statistics combinations...\n')
+
+            checks = [
+                ("ahiq", "plcc"),
+                ("lpips", "srocc"),
+            ]
+
+            self.check_stats(point_estimates, bootstrap_results, checks)
+
+            print('Done. \n')
 
 
-        ci_at_percentile = {metric: {stat:((np.round(np.percentile(iter_vals, p_percentile), decimals=3))) for stat, iter_vals in iter_stats.items()} for metric, iter_stats in bootstrap_results.items()}
-        bootstrap_results_df = pd.DataFrame(bootstrap_results)
-        ci_at_percentile = pd.DataFrame(ci_at_percentile)
-        print('Metric confidence intervals:\n')
-        print(ci_at_percentile)
-        (ci_at_percentile.T).to_csv("./survey_stats/CI_metrics.csv")
-        print('Done.\n')
-
-        ######################
-
-        print('\nChecking suspicious point-estimate to bootstraping ci metric-statistics combinations...\n')
-
-        checks = [
-            ("topiq_fr", "plcc"),
-            ("lpips", "srocc"),
-        ]
-
-        self.check_stats(point_estimates, bootstrap_results, checks)
-
-        print('Done. \n')
+            ######################
 
 
-        ######################
+            print('\nVisualizing CI for all stats...\n')
+
+            self.plot_metric_confidence_intervals(point_estimates=point_estimates, confidence_intervals=ci_at_percentile, metric_order=metric_order)
+
+            print('Done. \n')
 
 
-        print('\nVisualizing CI for all stats...\n')
-
-        self.plot_metric_confidence_intervals(point_estimates=point_estimates, confidence_intervals=ci_at_percentile, metric_order=metric_order)
-
-        print('Done. \n')
+            #######################
 
 
-        #######################
+            print(f'Computing Delta Intervals from bootstrap iterations for Reference {BEST_METRIC_HYPOTHESIS} and targets')
+
+            self.plot_metric_difference_ci(BEST_METRIC_HYPOTHESIS, list(bootstrap_results.keys()), bootstrap_results_df, point_estimates, metric_order)
+
+            print('Done. \n')
 
 
-        print(f'Computing Delta Intervals from bootstrap iterations for Reference {BEST_METRIC_HYPOTHESIS} and targets')
-
-        self.plot_metric_difference_ci(BEST_METRIC_HYPOTHESIS, list(bootstrap_results.keys()), bootstrap_results_df, point_estimates, metric_order)
-
-        print('Done. \n')
-
-
-        ######################
+            ######################
 
 
         print('Create Graph and Confidence Intervals for Color and Lum Correlation Point estimates...\n')
@@ -2082,13 +2081,13 @@ class DataProcessor:
     ##########################################################################################
 
 
-    def compare_to_iqa(self, original_mos, visualize=False):
+    def compare_to_iqa(self, original_mos):
         results_df = self.results_df.copy(deep=True)
         _ = results_df.pop('file_id') 
 
         rating_std = self.metric_collection.ig_statistics['rating_std'].to_numpy()
 
-        metrics_df = results_df.apply(self.metric_collection, args=(original_mos['mos'], rating_std), visualize=visualize, is_original_mos=True, folds=None, axis=0)
+        metrics_df = results_df.apply(self.metric_collection, args=(original_mos['mos'], rating_std), folds=None, axis=0, visualize=True)
         return metrics_df
                     
     def get_iqa_for_file(self, file, pert_mag, attack):
@@ -2131,39 +2130,48 @@ class DataProcessor:
         return plcc, srocc, outlier_ratio
 
 
-    def plot_metric_difference_ci(self, metric, targets, b_results_df, point_estimates, metric_order):
+    def plot_metric_difference_ci(self, best_metric, targets, b_results_df, point_estimates, metric_order):
 
-        metric_order = metric_order[1:] # remove AHIQ 
+        metric_order = metric_order[1:] # remove best metric 
         
 
-        point_estimate_delta_plcc = point_estimates[BEST_METRIC_HYPOTHESIS][0] - point_estimates[:].iloc[0]
-        point_estimate_delta_srocc = point_estimates[BEST_METRIC_HYPOTHESIS][1] - point_estimates[:].iloc[1]
-        point_estimate_delta_or = point_estimates[:].iloc[3] - point_estimates[BEST_METRIC_HYPOTHESIS][3]
+        point_estimate_delta_plcc = point_estimates[best_metric][0] - point_estimates[:].iloc[0]
+        point_estimate_delta_srocc = point_estimates[best_metric][1] - point_estimates[:].iloc[1]
+        point_estimate_delta_or = point_estimates[:].iloc[3] - point_estimates[best_metric][3]
         point_estimate_delta = pd.concat((point_estimate_delta_plcc, point_estimate_delta_srocc, point_estimate_delta_or), axis=1).T
         delta_interval_dict = {}
         delta_array_dict = {}
 
         for target in targets:
-            if target != metric:
-                delta_intervals, bs_delta_arrays = self.metric_ci_comparison(b_results_df, metric, target)
+            if target != best_metric:
+                delta_intervals, bs_delta_arrays = self.metric_ci_comparison(b_results_df, best_metric, target)
                 delta_interval_dict[target] = delta_intervals
                 delta_array_dict[target] = bs_delta_arrays
 
 
         delta_interval_df = pd.DataFrame(delta_interval_dict)
 
-        delta_interval_df.drop('l2', axis=1)
-        point_estimates.drop('l2', axis=1)
-
         p_values_iqa_difference = self.compute_pvalue_from_bs(point_estimates=point_estimate_delta, bs_delta_arrays=delta_array_dict)
 
         p_holm, p_raw, reject_h0 = holm_correction(p_values_iqa_difference) 
+        merged_p = combine_pe_ci(p_holm, p_raw, out_file='./survey_stats/p_values', flip=True)
 
         stat_2_int = {
                     'plcc':0,
                     'srocc':1,
                     'or':3
                 }
+
+        int_2_stat = {
+                    '0':'plcc',
+                    '1': 'srocc',
+                    '3': 'or'
+                }
+
+        
+        point_estimate_delta.index = ['plcc', 'srocc', 'or']
+
+        delta_ci_merged = combine_pe_ci(point_estimate_delta, delta_interval_df, "./survey_stats/ci_delta", flip=True)
 
         sns.set_theme(
             style="whitegrid",
@@ -2197,7 +2205,7 @@ class DataProcessor:
         ) in zip(axes, panel_configuration):
 
             estimates = np.array([
-                point_estimate_delta[metric][stat_2_int[statistic]]
+                point_estimate_delta[metric][statistic]
                 * scale
                 for metric in metric_order
             ])
@@ -2254,7 +2262,7 @@ class DataProcessor:
             regular_indices = [
                 index
                 for index, metric in enumerate(metric_order)
-                if metric != "ahiq"
+                if metric != best_metric
             ]
 
             axis.scatter(
@@ -2282,7 +2290,7 @@ class DataProcessor:
                 zorder=0,
             )
 
-            axis.set_xlim(-0.05, 0.4)
+            axis.set_xlim(-0.1, 0.5)
 
         axes[0].set_yticks(y_positions)
         axes[0].set_yticklabels([
@@ -2301,7 +2309,7 @@ class DataProcessor:
         sns.despine(figure)
 
         figure.suptitle(
-            "95% CI of Correlation Metric Differences (Delta) of AHIQ and remaining FR-IQA metrics",
+            "95% CI of Correlation Metric Differences (Delta) of TOPIQ-FR and remaining FR-IQA metrics",
             fontsize=TITLE_SIZE,
             fontweight='bold'
         )
@@ -2339,10 +2347,13 @@ class DataProcessor:
         confidence_intervals,
         metric_order
     ):
+        point_estimates_adjusted = point_estimates.drop(index=2)
+        point_estimates_adjusted.index = ['plcc', 'srocc', 'or']
+        ci_metric_merged = combine_pe_ci(point_estimates_adjusted, confidence_intervals, out_file='./survey_stats/ci_metrics', flip=True)
 
-        confidence_intervals.drop('l2', axis=1)
-        point_estimates.drop('l2', axis=1)
-        metric_order.remove('l2')
+        #confidence_intervals.drop('l2', axis=1)
+        #point_estimates.drop('l2', axis=1)
+        #metric_order.remove('l2')
 
         stat_2_int = {
             'plcc':0,
@@ -2381,20 +2392,25 @@ class DataProcessor:
             scale,
         ) in zip(axes, panel_configuration):
 
+            stat = stat_2_int[statistic]
+
             estimates = np.array([
-                point_estimates[metric][stat_2_int[statistic]]
+                point_estimates[metric][stat]
                 * scale
                 for metric in metric_order
             ])
+
+            if statistic == 'or':
+                best_index = estimates.argmin().item()
+            else:
+                best_index = estimates.argmax().item()
 
             lower = np.array([
                 confidence_intervals[
                     metric
                 ][statistic][0] * scale
                 for metric in metric_order
-            ])
-
-            
+            ])            
 
             upper = np.array([
                 confidence_intervals[
@@ -2436,7 +2452,7 @@ class DataProcessor:
             regular_indices = [
                 index
                 for index, metric in enumerate(metric_order)
-                if metric != "ahiq"
+                #if metric != BEST_METRIC_HYPOTHESIS
             ]
 
             axis.scatter(
@@ -2447,19 +2463,18 @@ class DataProcessor:
                 zorder=2,
             )
 
-            # Highlight AHIQ
-            if "ahiq" in metric_order:
-                ahiq_index = metric_order.index("ahiq")
+            # Highlight Best Metric
+            if BEST_METRIC_HYPOTHESIS in metric_order:
 
                 axis.scatter(
-                    estimates[ahiq_index],
-                    y_positions[ahiq_index],
+                    estimates[best_index],
+                    y_positions[best_index],
                     s=48,
                     color="#D55E00",
                     edgecolor="white",
                     linewidth=0.6,
                     zorder=3,
-                    label="AHIQ",
+                    #label=BEST_METRIC_HYPOTHESIS,
                 )
 
             axis.set_title(title)
@@ -2536,7 +2551,8 @@ class DataProcessor:
             mos_df, 
             visualize=False, 
             is_original_mos=False,
-            kfold_grouping=False):
+            kfold_grouping=False,
+            residual_analysis_only=False):
 
         #align MOS,STD and Metrics
         mos_df = mos_df.sort_values(by='file_id')
@@ -2560,8 +2576,11 @@ class DataProcessor:
 
         _ = metric_df.pop('file_id') # remove the file column from the metric df
 
-        metrics_df = metric_df.apply(self.metric_collection, args=(mos_scores, rating_std), visualize=visualize, is_original_mos=False, folds=folds, axis=0)
-        return metrics_df, folds
+        if residual_analysis_only:
+            return None, folds
+        else:
+            metrics_df = metric_df.apply(self.metric_collection, args=(mos_scores, rating_std), folds=folds, axis=0)
+            return metrics_df, folds
     
     # Step 3: Compare MOS to (1) frequency features (radial profiles) and (2) luminance and color features (Y,Cb,CR)
 
@@ -2594,7 +2613,7 @@ class DataProcessor:
         fig, ax = plt.subplots(figsize=(8.5,5.0), constrained_layout=True)
 
         
-        df = pd.DataFrame({'Mean Frequency': freq_comps, 'Delta':diffs})
+        df = pd.DataFrame({'Mean Frequency': freq_comps, 'Residual':diffs})
 
         ax.scatter(
             freq_comps,
@@ -2611,7 +2630,7 @@ class DataProcessor:
         sns.regplot(
             data=df,
             x="Mean Frequency",
-            y="Delta",
+            y="Residual",
             scatter=False,
             robust=True,
             ci=95,
@@ -2633,11 +2652,11 @@ class DataProcessor:
             va="bottom",
         )
 
-        print('Correlation stats result for Frequency-Delta relationship:\n')
+        print('Correlation stats result for Frequency-Residual relationship:\n')
         print(f'\tplcc:{plcc}, 95% CI [{plcc_lower},{plcc_upper}]')
         print(f'\trho:{srocc}, 95% CI [{srocc_lower},{srocc_upper}]\n')
 
-        plt.title("Mean Frequency vs Difference between Actual and Perceived Distortion",fontweight='bold', fontsize=TITLE_SIZE)
+        plt.title("Mean Frequency vs Perceptual Suppression Residual",fontweight='bold', fontsize=TITLE_SIZE)
 
         plt.savefig('./visualizations/frequency_percdelta.png')
 
@@ -2668,7 +2687,7 @@ class DataProcessor:
         fig, ax = plt.subplots(figsize=(8.5,5.0), constrained_layout=True)
 
         
-        df = pd.DataFrame({'Mean Luminance': y_comps, 'Delta':y_diffs})
+        df = pd.DataFrame({'Mean Luminance': y_comps, 'Residual':y_diffs})
 
         ax.scatter(
             y_comps,
@@ -2685,7 +2704,7 @@ class DataProcessor:
         sns.regplot(
             data=df,
             x="Mean Luminance",
-            y="Delta",
+            y="Residual",
             scatter=False,
             robust=True,
             ci=95,
@@ -2707,11 +2726,11 @@ class DataProcessor:
             va="bottom",
         )
 
-        print('Correlation stats result for Luminance-Delta relationship:\n')
+        print('Correlation stats result for Luminance-Residual relationship:\n')
         print(f'\tplcc:{plcc}, 95% CI [{plcc_lower},{plcc_upper}]')
         print(f'\trho:{srocc}, 95% CI [{srocc_lower},{srocc_upper}]')
 
-        plt.title("Mean Luminance vs Difference between Actual and Perceived Distortion",fontweight='bold', fontsize=TITLE_SIZE)
+        plt.title("Mean Luminance vs Perceptual Suppression Residual",fontweight='bold', fontsize=TITLE_SIZE)
 
         plt.savefig('./visualizations/luminance_percdelta.png')
 
@@ -2740,14 +2759,14 @@ class DataProcessor:
         files_df = metric_df.pop('file_id') # remove the file column from the metric df
 
         l2_results = metric_df['l2']
-        l2_results = self.metric_collection.fit_and_transform(l2_results, mos_scores, visualize=False, is_original_mos=is_original_mos, folds=folds) # transformed iqm
+        l2_predicted_mos = self.metric_collection.fit_and_transform(l2_results, mos_scores, folds=folds) # transformed iqm
         frequency_components_df = files_df.apply(self.get_frequency_components)
 
         if is_original_mos:
-            plcc_result, srocc_result, freq_comps, diffs = self.compute_freq_correlations_lsq(mos_scores, l2_results, frequency_components_df, is_original_mos)
+            plcc_result, srocc_result, freq_comps, diffs = self.compute_freq_correlations_lsq(mos_scores, l2_predicted_mos, frequency_components_df, is_original_mos)
             return plcc_result, srocc_result, freq_comps, diffs 
         else:
-            plcc_result, srocc_result = self.compute_freq_correlations_lsq(mos_scores, l2_results, frequency_components_df, is_original_mos)
+            plcc_result, srocc_result = self.compute_freq_correlations_lsq(mos_scores, l2_predicted_mos, frequency_components_df, is_original_mos)
             return plcc_result, srocc_result
 
 
@@ -2767,14 +2786,14 @@ class DataProcessor:
 
 
         l2_results = metric_df['l2']
-        l2_results = self.metric_collection.fit_and_transform(l2_results, mos_scores, visualize=False, is_original_mos=is_original_mos, folds=folds) # transformed iqm
+        l2_predicted_mos = self.metric_collection.fit_and_transform(l2_results, mos_scores, folds=folds) # transformed iqm
         clr_components_df = files_df.apply(self.get_color_lum_components)
 
         if is_original_mos:
-            plcc_results, srocc_result, y_comps, y_diffs = self.compute_clr_lum_correlations_lsq(mos_scores, l2_results, clr_components_df, is_original_mos)
+            plcc_results, srocc_result, y_comps, y_diffs = self.compute_clr_lum_correlations_lsq(mos_scores, l2_predicted_mos, clr_components_df, is_original_mos)
             return plcc_results, srocc_result, y_comps, y_diffs 
         else:
-            plcc_results, srocc_result = self.compute_clr_lum_correlations_lsq(mos_scores, l2_results, clr_components_df, is_original_mos)
+            plcc_results, srocc_result = self.compute_clr_lum_correlations_lsq(mos_scores, l2_predicted_mos, clr_components_df, is_original_mos)
             return plcc_results, srocc_result
     
     def get_color_lum_components(self, file):
@@ -2786,28 +2805,6 @@ class DataProcessor:
         img = self.to_tensor(img)
         color_lum = img.mean(dim=(1,2))
         return color_lum.tolist()
-
-    def compute_freq_correlations_lsq(self, mos_scores, l2_results, frequency_components_df, is_original_mos=False):
-        frequency_components = frequency_components_df.to_numpy()
-        differences = l2_results - mos_scores
-        plcc_res = pearsonr(frequency_components, differences)
-        srocc_res = spearmanr(frequency_components, differences)
-
-        # plot freq correlations
-        # x - frequency component y - difference
-        # hopefully, as the mean freq increases, so will teh gap between l2 and mos
-
-        zipped = zip(frequency_components, differences)
-        # sort by mean frequency
-        sorted_zipped = sorted(zipped, key=lambda x: x[0])
-
-        freq_comps = [x[0] for x in sorted_zipped]
-        diffs = [x[1] for x in sorted_zipped]
-
-        if is_original_mos:
-            return plcc_res, srocc_res, freq_comps, diffs
-        else:
-            return plcc_res, srocc_res
 
     def get_frequency_components(self, file):
         attack, pert = file.split('-')
@@ -2821,20 +2818,39 @@ class DataProcessor:
         counter = rad_profile * weighter
         counter = counter.mean()
         return (counter / denom).item()
+
+    def compute_freq_correlations_lsq(self, mos_scores, l2_predicted_mos, frequency_components_df, is_original_mos=False):
+        frequency_components = frequency_components_df.to_numpy()
+        perceptual_suppresion_residual = l2_predicted_mos - mos_scores
+        plcc_res = pearsonr(frequency_components, perceptual_suppresion_residual)
+        srocc_res = spearmanr(frequency_components, perceptual_suppresion_residual)
+
+        # plot freq correlations
+        # x - frequency component y - difference
+        # hopefully, as the mean luminance increases, so will the gap between l2 and mos
+
+        zipped = zip(frequency_components, perceptual_suppresion_residual)
+        # sort by mean frequency
+        sorted_zipped = sorted(zipped, key=lambda x: x[0])
+
+        freq_comps = [x[0] for x in sorted_zipped]
+        diffs = [x[1] for x in sorted_zipped]
+
+        if is_original_mos:
+            return plcc_res, srocc_res, freq_comps, diffs
+        else:
+            return plcc_res, srocc_res
     
     ## (2) Luminance and color features
     
-    def compute_clr_lum_correlations_lsq(self, mos_scores, l2_results, clr_components_df, is_original_mos):
+    def compute_clr_lum_correlations_lsq(self, mos_scores, l2_predicted_mos, clr_components_df, is_original_mos):
         clr_components = clr_components_df.to_list()
-
         y_components = np.array([x[0] for x in clr_components])
+        perceptual_suppression_residual = l2_predicted_mos - mos_scores
+        plcc_res = pearsonr(y_components, perceptual_suppression_residual)
+        srocc_res = spearmanr(y_components, perceptual_suppression_residual)
 
-        differences = l2_results - mos_scores
-
-        plcc_res = pearsonr(y_components, differences)
-        srocc_res = pearsonr(y_components, differences)
-
-        y_zipped = zip(y_components, differences)
+        y_zipped = zip(y_components, perceptual_suppression_residual)
 
         # sort by mean color
         y_sorted_zipped = sorted(y_zipped, key=lambda x: x[0])
@@ -2903,7 +2919,7 @@ def holm_correction(p_value_df, alpha=SIGNIFICANCE_LEVEL):
 
     print("###################################################################################\n")
 
-    print("Reject 0-hypothesis (H-0: no statistically resolvable difference between AHIQ and remaining metric):\n")
+    print(f"Reject 0-hypothesis (H-0: no statistically resolvable difference between {BEST_METRIC_HYPOTHESIS} and remaining metric):\n")
     print(reject_h0, "\n")
 
     print("###################################################################################\n")
@@ -2919,6 +2935,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_path', type=str, default='data.csv', help='set the path to data csv')
     parser.add_argument('--resampling_target', type=str, default='crossed', help='set one of ["participants", "stimuli", "crossed"]')
     parser.add_argument('--device', type=str, default='cpu', help='set the device')
+    parser.add_argument('--residual_analysis_only', type=bool, default=False, help='performs bootstrapping only for residual analysis')
 
     args = parser.parse_args()
 
@@ -2954,7 +2971,9 @@ if __name__ == '__main__':
     elif args.resampling_target == 'stimuli':
         correlation_ci = data_processor.stimuli_wise_bootstrap_iqa_comparison()
     elif args.resampling_target == 'crossed':
-        correlation_ci = data_processor.crossed_bootstrap_iqa_comparison()
+        correlation_ci = data_processor.crossed_bootstrap_iqa_comparison(
+            residual_analysis_only=args.residual_analysis_only
+        )
     else:
         print('resampling target [{args.resampling_target}] not implemented.')
 
