@@ -7,6 +7,12 @@
 # Then install this file. On macOS/CPU systems, the ordinary PyPI wheels below
 # are used instead.
 
+# Use the official package index and prevent pip from falling back to a local
+# Matplotlib source build. Matplotlib 3.9.2 provides CPython 3.12 wheels for
+# both Apple Silicon and Intel macOS systems.
+--index-url https://pypi.org/simple
+--only-binary=matplotlib
+
 # Core numerical and statistical stack
 numpy==1.26.4
 pandas==2.2.2
@@ -40,7 +46,7 @@ kornia==0.7.2
 omegaconf==2.3.0
 POT==0.9.5
 torch-dct==0.1.6
-pytorch-colors==0.1.0
+pytorch-colors @ git+https://github.com/jorge-pessoa/pytorch-colors.git@master
 DISTS-pytorch==0.1
 IQA-pytorch==0.1
 diff-jpeg @ git+https://github.com/necla-ml/Diff-JPEG@e81f082896ba145e35cc129bc7743244e10881e5

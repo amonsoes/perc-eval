@@ -56,10 +56,10 @@ python -m pip install deptry==0.25.1
 Dependency declarations are checked with deptry. From the repository root, run:
 
 ```
-conda run -n adv deptry .
+deptry .
 ```
 
-This command uses the adv Conda environment and does not require it to be activated. A valid dependency configuration produces:
+A valid dependency configuration produces:
 
 Success! No dependency issues found.
 
