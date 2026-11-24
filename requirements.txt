@@ -1,27 +1,46 @@
-art==6.5
-einops==0.8.2
-gdown==6.1.0
-kornia==0.8.3
-matplotlib==3.8.0
-numpy==2.5.2
-omegaconf==2.3.1
-pandas==3.0.5
-Pillow==12.3.0
-pyiqa==0.1.16
-scikit_learn==1.2.2
-scipy==1.18.0
+# Reproduction environment for perc-eval
+# Target interpreter: Python 3.12.3
+#
+# For the CUDA 12.4 build used in the paper, install PyTorch first with:
+#   python -m pip install torch==2.4.0 torchvision==0.19.0 \
+#     --index-url https://download.pytorch.org/whl/cu124
+# Then install this file. On macOS/CPU systems, the ordinary PyPI wheels below
+# are used instead.
+
+# Core numerical and statistical stack
+numpy==1.26.4
+pandas==2.2.2
+scipy==1.13.1
+scikit-learn==1.5.0
+statsmodels==0.14.2
+Pillow==10.3.0
+matplotlib==3.9.2
 seaborn==0.13.2
-scikit-image
-timm==1.0.28
-torch==2.13.0
-torchmetrics==1.9.0
-torchvision==0.28.0
+scikit-image==0.23.2
 tqdm==4.65.0
-transformers==5.15.1
+
+# PyTorch and image-quality stack used for the reported IQA scores
+torch==2.4.0
+torchvision==0.19.0
+torchmetrics==1.4.0.post0
+timm==1.0.8
+pyiqa @ git+https://github.com/chaofengc/IQA-PyTorch.git@24abb8db26931820c5f8fe192b357edf0aae2e2c
+transformers==4.37.2
+huggingface-hub==0.34.3
+accelerate==1.3.0
+open-clip-torch==2.32.0
+gdown==5.2.0
+
+# Attack-generation and image-transformation dependencies
+adversarial-robustness-toolbox==1.17.1
+torchattacks==3.5.1
+requests==2.25.1
+einops==0.8.0
+kornia==0.7.2
+omegaconf==2.3.0
 POT==0.9.5
 torch-dct==0.1.6
 pytorch-colors==0.1.0
 DISTS-pytorch==0.1
 IQA-pytorch==0.1
 diff-jpeg @ git+https://github.com/necla-ml/Diff-JPEG@e81f082896ba145e35cc129bc7743244e10881e5
-torchattacks==3.5.1
