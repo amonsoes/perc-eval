@@ -2963,7 +2963,7 @@ if __name__ == '__main__':
 
     print("\n====================================\n")
 
-    #fitting_stability_results = data_processor.metric_collection.quantify_fitting_stability(data_processor.stimuli_df, RNG, n_repeats=100)
+    fitting_stability_results = data_processor.metric_collection.quantify_fitting_stability(data_processor.stimuli_df, RNG, n_repeats=100)
 
 
     if args.resampling_target == 'participants':
