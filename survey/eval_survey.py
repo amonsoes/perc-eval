@@ -490,8 +490,8 @@ class DataProcessor:
     
     
     def create_file_csv(self):
-        #if not os.path.exists('./data/perc_eval/images/images.csv'):
-        with open ('./data/perc_eval/images/images.csv', 'w') as f:
+
+        with open ('./data/perc_eval/references/images.csv', 'w') as f:
             csv_obj = csv.writer(f)
             csv_obj.writerow(['filename', 'attack', 'pert_bound'])
             for key, val in self.dist_dict.items():

@@ -63,6 +63,12 @@ This command uses the adv Conda environment and does not require it to be activa
 
 Success! No dependency issues found.
 
+## Data Preparation
+
+- Download the ImageNet validation data (Links above), rename it to ext_nips17/ and place it the directory ./data/
+- Download the NIPS17 dataset, rename it to nips_17/ and place it in the directory ./data/
+- Download the distortion comparison data [here](https://mega.nz/file/EMpEmRya#ccMaeFZtRtIICZBleZLlcZoyRga6pbGGFV8mQhsJeZQ), unzip it, and place it in the directory ./data/
+
 
 ## Replicate IQA Score Assignment
 
@@ -162,6 +168,10 @@ Output destination:
 The dataset described in the paper is available in
 
 ./survey/data/perc_eval/
+
+The references can be found in the subfolder /references/
+
+The adversarially perturbed images are sorted by the respective nominal distortion budget.
 
 and will be published in a individual-rating:image format in the near future.
 

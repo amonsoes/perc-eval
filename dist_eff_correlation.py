@@ -327,7 +327,7 @@ def visualize_pred_displacement(prediction_displacement_df, model_name):
 
 if __name__ == '__main__':
 
-    path_real_images = "./survey/data/perc_eval/images_new/"
+    path_real_images = "./survey/data/perc_eval/references/"
     path_adv_images = "./survey/data/perc_eval/"
     mos_table = load_mos_table("./survey/data/perc_eval/scores_and_mos.csv")
     ground_truth = pd.read_csv("survey/data/perc_eval/labels_survey.csv")
